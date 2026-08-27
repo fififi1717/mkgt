@@ -1,0 +1,29 @@
+{
+  "_lisez_moi": "Positions XML des slots variables du Canvas Master. Communes à TOUS les clients — ne dépendent que de la version de Cans_Mstr.pptx, jamais d'un dossier particulier. À revérifier uniquement si le hash SHA256 de Cans_Mstr.pptx change (cf. mémoire de session, contrôle d'intégrité obligatoire en début de session).",
+  "canvas_sha256": "de1c8640af559471444545177cf317724f935b6106a9ff3931783237e9f37160",
+
+  "slides_personnalisees": [1, 4, 5, 7, 8, 9, 10, 12, 13, 14, 15, 16, 18],
+  "_note_slides_personnalisees": "Liste fixe des slides Canvas Master remplies à chaque dossier (identique pour tous les clients). Exclut 2/3/6/11/17/19 (structurelles ou fixes) et toutes les slides bibliothèque insérées (R8, copiées telles quelles — jamais personnalisées, jamais contrôlées).",
+
+  "slots_variables": {
+    "12": {
+      "description": "Vos projets — jusqu'à 3 colonnes objectif",
+      "axe": "x",
+      "positions": [502920, 3200400, 5897880],
+      "max_slots": 3
+    },
+    "13": {
+      "description": "Moyens de la stratégie — jusqu'à 5 lignes (4 enveloppes + épargne mensuelle)",
+      "axe": "y",
+      "positions": [2093976, 2404872, 2715768, 3026664, 3337560],
+      "max_slots": 5
+    },
+    "15": {
+      "description": "Synthèse de la stratégie — jusqu'à 3 colonnes axe (même grille que slide 12)",
+      "axe": "x",
+      "positions": [502920, 3200400, 5897880],
+      "max_slots": 3
+    }
+  },
+  "_note_slots_variables": "Ces coordonnées ne changent JAMAIS d'un client à l'autre — seul le nombre de slots réellement utilisés varie (cf. fichier par dossier). Slide 8 (succession) n'est PAS ici : elle est plafonnée à 2 slots dans le XML, sans 3e emplacement possible — ce n'est pas un cas 'slot à supprimer', c'est une limite dure du template (cf. crash-test 27/08/2026, non résolue)."
+}

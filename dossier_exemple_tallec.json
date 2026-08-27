@@ -1,0 +1,21 @@
+{
+  "_lisez_moi": "Fichier propre à CE dossier — à générer à chaque nouveau client, contrairement à template_positions.json qui ne change jamais.",
+  "client": "TALLEC (Cl.T. & Ge.T.)",
+  "date_generation": "2026-08-27",
+
+  "nb_elements_reels": {
+    "12": 2,
+    "13": 2,
+    "15": 2
+  },
+  "_note_nb_elements_reels": "Nombre réel de projets (slide 12) / moyens (slide 13) / axes de synthèse (slide 15) validés en Étape 2 pour CE client. Change à chaque dossier — c'est la seule donnée nécessaire pour savoir quels slots supprimer, une fois croisée avec template_positions.json (générique).",
+
+  "chiffres_source": [
+    5880000, 3880000, 24490, 900000, 800000, 1600000, 2400000,
+    1100000, 1300000, 450000, 240000, 400000, 80000, 200000,
+    40000, 30000, 35000,
+    3014217, 225783, 3657507, 494412, 75261, 164804, 720195,
+    500000, 400000
+  ],
+  "_note_chiffres_source": "100% propre à ce client — montants extraits du CR + validés en Étape 2. À reconstruire intégralement pour chaque nouveau dossier, ne jamais réutiliser d'un client à l'autre."
+}
