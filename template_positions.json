@@ -1,29 +1,66 @@
 {
-  "_lisez_moi": "Positions XML des slots variables du Canvas Master. Communes à TOUS les clients — ne dépendent que de la version de Cans_Mstr.pptx, jamais d'un dossier particulier. À revérifier uniquement si le hash SHA256 de Cans_Mstr.pptx change (cf. mémoire de session, contrôle d'intégrité obligatoire en début de session).",
-  "canvas_sha256": "de1c8640af559471444545177cf317724f935b6106a9ff3931783237e9f37160",
-
-  "slides_personnalisees": [1, 4, 5, 7, 8, 9, 10, 12, 13, 14, 15, 16, 18],
+  "_lisez_moi": "Positions XML des slots variables du Canvas Master. Communes à TOUS les clients — ne dépendent que de la version de Cans_Mstr.pptx, jamais d'un dossier particulier. À revérifier uniquement si le hash SHA256 de Cans_Mstr.pptx change (cf. mémoire de session, contrôle d'intégrité obligatoire en début de session). MAJ 27/08/2026 : hash mis à jour suite à l'édition de Cans_Mstr.pptx (slide 8, ajout d'un 3e emplacement héritier).",
+  "canvas_sha256": "4562a2621b244e861a220f853e5efbbc8882c4f297f3a394c8d265f4df27b42e",
+  "slides_personnalisees": [
+    1,
+    4,
+    5,
+    7,
+    8,
+    9,
+    10,
+    12,
+    13,
+    14,
+    15,
+    16,
+    18
+  ],
   "_note_slides_personnalisees": "Liste fixe des slides Canvas Master remplies à chaque dossier (identique pour tous les clients). Exclut 2/3/6/11/17/19 (structurelles ou fixes) et toutes les slides bibliothèque insérées (R8, copiées telles quelles — jamais personnalisées, jamais contrôlées).",
-
   "slots_variables": {
     "12": {
       "description": "Vos projets — jusqu'à 3 colonnes objectif",
       "axe": "x",
-      "positions": [502920, 3200400, 5897880],
+      "positions": [
+        502920,
+        3200400,
+        5897880
+      ],
       "max_slots": 3
     },
     "13": {
       "description": "Moyens de la stratégie — jusqu'à 5 lignes (4 enveloppes + épargne mensuelle)",
       "axe": "y",
-      "positions": [2093976, 2404872, 2715768, 3026664, 3337560],
+      "positions": [
+        2093976,
+        2404872,
+        2715768,
+        3026664,
+        3337560
+      ],
       "max_slots": 5
     },
     "15": {
       "description": "Synthèse de la stratégie — jusqu'à 3 colonnes axe (même grille que slide 12)",
       "axe": "x",
-      "positions": [502920, 3200400, 5897880],
+      "positions": [
+        502920,
+        3200400,
+        5897880
+      ],
       "max_slots": 3
+    },
+    "8": {
+      "description": "Succession — lignes héritiers (Enfant 1/2/3), même Y sur les 2 cartes 1er/2e décès",
+      "axe": "y",
+      "positions": [
+        3493008,
+        3749040,
+        4005072
+      ],
+      "max_slots": 3,
+      "_note": "Ajouté 27/08/2026 : le Canvas Master ne supportait que 2 héritiers (aucun 3e emplacement dans le XML) ; corrigé par ajout d'une 3e ligne 'Enfant 3' sur les deux cartes 1er/2e décès (même grille Y, donc une seule liste de positions suffit — remove_unused_slots.py matche par Y seul, ce qui couvre les 2 cartes en un passage), avec repositionnement du Conjoint à y=4261104 (hors de cette liste, jamais supprimé). ⚠ Comme pour 12/13/15 : pas de reflow. Si nb_reel < 3, le Conjoint reste à sa position décalée -> un espace vide apparaît entre le dernier héritier et Conjoint. Limitation connue et acceptée (identique à celle déjà documentée pour 12/13/15), pas une régression. Au-delà de 3 héritiers, la limite dure persiste : regrouper deux héritiers dans un seul repère (cf. skill §GESTION DES CAS LIMITES)."
     }
   },
-  "_note_slots_variables": "Ces coordonnées ne changent JAMAIS d'un client à l'autre — seul le nombre de slots réellement utilisés varie (cf. fichier par dossier). Slide 8 (succession) n'est PAS ici : elle est plafonnée à 2 slots dans le XML, sans 3e emplacement possible — ce n'est pas un cas 'slot à supprimer', c'est une limite dure du template (cf. crash-test 27/08/2026, non résolue)."
+  "_note_slots_variables": "Ces coordonnées ne changent JAMAIS d'un client à l'autre — seul le nombre de slots réellement utilisés varie (cf. fichier par dossier). Slide 8 (succession) : corrigée le 27/08/2026, passe de 2 à 3 emplacements héritier max (cf. slots_variables['8']) — la limite dure existe toujours au-delà de 3."
 }
