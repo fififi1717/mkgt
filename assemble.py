@@ -236,7 +236,14 @@ def reorder_narratif(tmp_dir, canvas_slide_count, inserted, index_data):
 # 3. Renumérotation des folios Canvas (§5bis)
 # ---------------------------------------------------------------------------
 def renumber_canvas_folios(tmp_dir, ordered_rids, canvas_folio_map):
-    """canvas_folio_map: {ancien_numero_texte_fige (str) -> rid_canvas_source}
+    """canvas_folio_map: {rid_canvas_source (str) -> ancien_numero_texte_fige (str)}
+    CORRECTIF 27/08/2026 (crash-test) : la docstring précédente indiquait l'ordre
+    inverse (ancien_numero -> rid), incohérent avec la boucle ci-dessous
+    (`for rid, old_folio in canvas_folio_map.items()`), qui attend rid en clé.
+    Avec l'ancien ordre, un canvas_folio_map construit "à la lettre" de la
+    docstring ne levait aucune erreur mais ne renumérotait RIEN (aucun match
+    de pattern, car old_folio == une valeur rId qui n'apparaît jamais dans un
+    <a:t>) — échec silencieux. Corrigé ici pour que docstring et code concordent.
     Remplace le <a:t>N</a:t> figé de chaque slide Canvas par sa position réelle
     dans le deck final (1-indexée), calculée à partir de ordered_rids."""
     pres_rels_path = os.path.join(tmp_dir, "ppt", "_rels", "presentation.xml.rels")
@@ -261,6 +268,43 @@ def renumber_canvas_folios(tmp_dir, ordered_rids, canvas_folio_map):
             open(path, "w", encoding="utf-8").write(xml)
             updated.append((slide_file, old_folio, new_folio))
     return updated
+
+
+# ---------------------------------------------------------------------------
+# 3bis. Construction automatique de canvas_folio_map (CORRECTIF 27/08/2026)
+#    Avant ce correctif : canvas_folio_map optionnel, jamais fourni en
+#    pratique -> §5.1 (renumérotation) systématiquement sautée -> folios
+#    imprimés faux/dupliqués/non-monotones dans TOUT dossier généré dès que
+#    des slides bibliothèque sont insérées entre des slides Canvas Master.
+#    Confirmé en crash-test réel (dossier Fillon) : positions 22 et 23
+#    affichaient toutes deux "16", position 24 affichait "19" puis la
+#    position 26 affichait "18" (régression). Ni validate.py ni le grep
+#    placeholder ne détectent ce défaut visible au client.
+#    Ce correctif calcule canvas_folio_map automatiquement à partir du
+#    Canvas Master D'ORIGINE (avant toute insertion/réordonnancement), donc
+#    sans dépendre d'une saisie manuelle par session.
+# ---------------------------------------------------------------------------
+def build_default_canvas_folio_map(canvas_path):
+    """Scanne le Cans_Mstr.pptx d'origine (non modifié) et associe à chaque
+    rId de slide Canvas le folio statique (2 chiffres isolés, ex. "07") tel
+    qu'il apparaît AVANT toute insertion de slide bibliothèque ou
+    réordonnancement. Slides sans folio détecté (couverture, sections
+    structurelles sans numéro) sont ignorées -- comportement attendu."""
+    folio_map = {}
+    with zipfile.ZipFile(canvas_path) as z:
+        rels = z.read("ppt/_rels/presentation.xml.rels").decode("utf-8", "ignore")
+        rid_to_target = dict(re.findall(r'Id="(rId\d+)"[^>]*Target="slides/([^"]+)"', rels))
+        for rid, target in rid_to_target.items():
+            path = f"ppt/slides/{target}"
+            try:
+                xml = z.read(path).decode("utf-8", "ignore")
+            except KeyError:
+                continue
+            texts = [t for t in re.findall(r"<a:t>([^<]*)</a:t>", xml) if t.strip()]
+            folio_candidates = [t for t in texts[:4] if re.fullmatch(r"\d{2}", t)]
+            if folio_candidates:
+                folio_map[rid] = folio_candidates[0]
+    return folio_map
 
 
 # ---------------------------------------------------------------------------
@@ -336,13 +380,18 @@ def main():
     print("[2/4] Réordonnancement narratif (§5.2ter)...")
     ordered_rids = reorder_narratif(tmp_dir, canvas_slide_count, inserted, index_data)
 
-    if spec.get("canvas_folio_map"):
-        print("[3/4] Renumérotation des folios Canvas (§5bis)...")
-        updated = renumber_canvas_folios(tmp_dir, ordered_rids, spec["canvas_folio_map"])
-        for slide_file, old, new in updated:
-            print(f"  {slide_file}: folio {old} -> {new}")
+    canvas_folio_map = spec.get("canvas_folio_map")
+    if canvas_folio_map:
+        print("[3/4] Renumérotation des folios Canvas (§5bis, canvas_folio_map fourni)...")
     else:
-        print("[3/4] canvas_folio_map absent de la spec — renumérotation sautée (à fournir en v2).")
+        print("[3/4] canvas_folio_map absent de la spec — construction automatique depuis "
+              "le Canvas Master d'origine (correctif 27/08/2026)...")
+        canvas_folio_map = build_default_canvas_folio_map(canvas_path)
+    updated = renumber_canvas_folios(tmp_dir, ordered_rids, canvas_folio_map)
+    for slide_file, old, new in updated:
+        print(f"  {slide_file}: folio {old} -> {new}")
+    if not updated:
+        print("  ⚠ aucun folio renuméré — à vérifier manuellement avant livraison.")
 
     if spec.get("patrimoine"):
         lines = build_patrimoine_table_xml(spec["patrimoine"])
@@ -374,7 +423,12 @@ def main():
                 print(r.stderr, file=sys.stderr)
                 die("validate.py a échoué — dossier NON conforme, ne pas livrer au consultant.")
         else:
-            print("(validate.py non trouvé à l'emplacement attendu — valider manuellement avant livraison)")
+            die("validate.py introuvable à l'emplacement attendu "
+                "(/mnt/skills/public/pptx/scripts/office/validate.py). "
+                "CORRECTIF 27/08/2026 : ce cas bloquait auparavant seulement avec un print, "
+                "et le script continuait -> un dossier pouvait sortir sans AUCUNE validation "
+                "structurelle sans que personne ne s'en aperçoive. Désormais bloquant. "
+                "Utiliser --skip-validate explicitement si une validation manuelle est prévue.")
 
 
 if __name__ == "__main__":
