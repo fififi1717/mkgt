@@ -1,6 +1,6 @@
 {
-  "_lisez_moi": "Positions XML des slots variables du Canvas Master. Communes à TOUS les clients — ne dépendent que de la version de Cans_Mstr.pptx, jamais d'un dossier particulier. À revérifier uniquement si le hash SHA256 de Cans_Mstr.pptx change (cf. mémoire de session, contrôle d'intégrité obligatoire en début de session). MAJ 28/08/2026 (v4.16) : slide 5 refondue en table détaillée actif par actif (plus de slots_variables associés, cf. note dédiée) ; slide 8 refondue en ligne unique 'Par enfant (×N)' par carte, valable pour tout nombre d'enfants — l'entrée slots_variables['8'] est donc RETIRÉE (obsolète, la limite dure à 3 héritiers qu'elle documentait n'existe plus) ; 3 notes de conception internes (slides 9, 12, 17) déplacées en notes de présentateur (R15).",
-  "canvas_sha256": "6e546861d6b5ff2b16b0a958fdcd6ab439cbb325827e9140712c8b3503c615ea",
+  "_lisez_moi": "Positions XML des slots variables du Canvas Master. Communes à TOUS les clients — ne dépendent que de la version de Cans_Mstr.pptx, jamais d'un dossier particulier. À revérifier uniquement si le hash SHA256 de Cans_Mstr.pptx change (cf. mémoire de session, contrôle d'intégrité obligatoire en début de session). MAJ 27/08/2026 : hash mis à jour suite à l'édition de Cans_Mstr.pptx (slide 8, ajout d'un 3e emplacement héritier).",
+  "canvas_sha256": "4562a2621b244e861a220f853e5efbbc8882c4f297f3a394c8d265f4df27b42e",
   "slides_personnalisees": [
     1,
     4,
@@ -16,7 +16,7 @@
     16,
     18
   ],
-  "_note_slides_personnalisees": "Liste fixe des slides Canvas Master remplies à chaque dossier (identique pour tous les clients). Exclut 2/3/6/11/17/19 (structurelles ou fixes) et toutes les slides bibliothèque insérées (R8, copiées telles quelles — jamais personnalisées, jamais contrôlées). Note : la slide 17 (Accompagnement) contient une section personnalisable (ENGAGEMENTS SPÉCIFIQUES) mais n'est pas dans cette liste par choix historique — à réévaluer si le contrôle de traçabilité doit un jour la couvrir.",
+  "_note_slides_personnalisees": "Liste fixe des slides Canvas Master remplies à chaque dossier (identique pour tous les clients). Exclut 2/3/6/11/17/19 (structurelles ou fixes) et toutes les slides bibliothèque insérées (R8, copiées telles quelles — jamais personnalisées, jamais contrôlées).",
   "slots_variables": {
     "12": {
       "description": "Vos projets — jusqu'à 3 colonnes objectif",
@@ -41,21 +41,31 @@
       "max_slots": 5
     },
     "15": {
-      "description": "Synthèse de la stratégie — jusqu'à 3 colonnes axe (même grille que slide 12)",
+      "description": "Synthèse de la stratégie — jusqu'à 3 colonnes axe (cartes pleines, gabarit refondu 28/08/2026). Chaque carte porte un pied à 2 emplacements solution : le n°2 se retire colonne par colonne via remove_solution_slot.py (matching X ET Y), remove_unused_slots.py ne pouvant pas cibler une cellule.",
       "axe": "x",
       "positions": [
         502920,
         3200400,
         5897880
       ],
-      "max_slots": 3
+      "max_slots": 3,
+      "solution_slot_2_y": [
+        3990784,
+        4060784,
+        4400784
+      ]
+    },
+    "8": {
+      "description": "Succession — lignes héritiers (Enfant 1/2/3), même Y sur les 2 cartes 1er/2e décès",
+      "axe": "y",
+      "positions": [
+        3493008,
+        3749040,
+        4005072
+      ],
+      "max_slots": 3,
+      "_note": "Ajouté 27/08/2026 : le Canvas Master ne supportait que 2 héritiers (aucun 3e emplacement dans le XML) ; corrigé par ajout d'une 3e ligne 'Enfant 3' sur les deux cartes 1er/2e décès (même grille Y, donc une seule liste de positions suffit — remove_unused_slots.py matche par Y seul, ce qui couvre les 2 cartes en un passage), avec repositionnement du Conjoint à y=4261104 (hors de cette liste, jamais supprimé). ⚠ Comme pour 12/13/15 : pas de reflow. Si nb_reel < 3, le Conjoint reste à sa position décalée -> un espace vide apparaît entre le dernier héritier et Conjoint. Limitation connue et acceptée (identique à celle déjà documentée pour 12/13/15), pas une régression. Au-delà de 3 héritiers, la limite dure persiste : regrouper deux héritiers dans un seul repère (cf. skill §GESTION DES CAS LIMITES)."
     }
   },
-  "_note_slots_variables": "Ces coordonnées ne changent JAMAIS d'un client à l'autre — seul le nombre de slots réellement utilisés varie (cf. fichier par dossier). RETIRÉ v4.16 : l'entrée '8' (succession, ex-limite à 3 héritiers) — la slide 8 utilise désormais une ligne unique 'Par enfant (×N)' par carte (1er et 2e décès), qui fonctionne pour tout nombre d'enfants sans suppression de slot. Aucun script n'a plus besoin de toucher la slide 8 pour cette raison ; remove_unused_slots.py ne doit plus recevoir de slot pour la clé '8'.",
-  "slide_5_table": {
-    "description": "Patrimoine détaillé — table native python-pptx (pas de slots_variables au sens slide 12/13/15, car c'est une table, pas des shapes individuels positionnés).",
-    "lignes_par_defaut": 10,
-    "colonnes": ["Actif", "Propriétaire", "Détention", "Montant"],
-    "_note": "Ajoutée v4.16, remplace l'ancienne vue consolidée par catégorie (8 lignes fixes). Pour un client avec plus/moins de 10 actifs, dupliquer/supprimer des <a:tr> dans la table AVANT remplissage (cf. notes de présentateur de la slide 5 dans Cans_Mstr.pptx pour le mode d'emploi complet). Aucun script d'automatisation dédié à ce jour (remove_unused_slots.py ne gère que des shapes positionnés par Y, pas des lignes de table) — étape manuelle assumée, à outiller si le volume de dossiers le justifie."
-  }
+  "_note_slots_variables": "Ces coordonnées ne changent JAMAIS d'un client à l'autre — seul le nombre de slots réellement utilisés varie (cf. fichier par dossier). Slide 8 (succession) : corrigée le 27/08/2026, passe de 2 à 3 emplacements héritier max (cf. slots_variables['8']) — la limite dure existe toujours au-delà de 3. | slide 15 : 'solution_slot_2_y' liste les offsets Y des formes de l'emplacement solution n°2 (filet fin + nom de solution + profil de risque). Utilisé uniquement par remove_solution_slot.py, en intersection avec l'offset X de la colonne concernée."
 }
