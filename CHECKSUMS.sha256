@@ -1,30 +1,12 @@
-# Affilior — mkgt — registre central des hash de référence
-# Généré le 27/08/2026 (crash-test #2). Objectif : permettre à TOUTE session
-# Claude (pas seulement celle qui a fait le crash-test) de vérifier l'intégrité
-# des fichiers exécutables/binaires du dépôt sans dépendre de sa propre mémoire
-# de session — la mémoire reste un filet supplémentaire, ce fichier est la
-# source de vérité partagée entre tous les consultants.
-#
-# Usage (au début de toute session avant clone/exécution) :
-#   sha256sum -c CHECKSUMS.sha256
-# Toute divergence -> s'arrêter, ne PAS exécuter, faire confirmer par un
-# associé avant de poursuivre (cf. §FICHIERS DE RÉFÉRENCE et §5.1 du skill).
-#
-# NB de sécurité : ce fichier vit dans le même dépôt que ce qu'il vérifie —
-# il protège contre la corruption/désynchronisation accidentelle (réseau,
-# mauvais commit, fichier oublié), PAS contre une compromission du dépôt
-# lui-même (un attaquant avec accès en écriture peut modifier fichier ET
-# manifeste ensemble). D'où la recommandation déjà faite le 27/08/2026 :
-# 2FA + branch protection sur main avec revue obligatoire — ce fichier ne
-# remplace pas cette protection, il la complète.
-
-4562a2621b244e861a220f853e5efbbc8882c4f297f3a394c8d265f4df27b42e  Cans_Mstr.pptx
+efd87b040ed6fcd95bc34f6bc9a04f3e459fd69fdf203616c4b40cecd22e87e0  Cans_Mstr.pptx
 85d247d4afe357e8eebf657bffb1f15cac990bdc98f63e17523f36755836bfe1  Bibe_Def.pptx
-31b661fef6670e3cad4e95f508e21b119a2add6a1dfa4fce13e8a70ce45d2225  assemble.py
-65e803eadc838e9c251aceec1ba3dbb7baa607efb37a3c5755b473c6bf2adc34  index.json
+c5fa86c7da884d1652daa9ea20300b00e41ae161a448a380df1cb0207224db1b  assemble.py
+abf57d051d4ea599e51c695cdd7f9071779856de90036acd6025fa2bd608f391  index.json
+ff1989a624d2072b1873ea0c98413a28a673c9df8741ca7cc10461a9015fb9da  finalize_deck.py
+0107c3d5b2c4b97a03ea235403f074e5e1641e3c78d4ba9fe30ba677f8a72039  check_charts.py
+963d104f462b0665c9d2e6dad9d5616ef6ba4af3595e82be68f57419b806d391  check_template_residue.py
+ff2eb53b9b4c8e0a1887e16eee0446f0ee6153d3a61a436a7aa0ff8153051281  template_positions.json
 76bdbe5fd173f52aef25556388184d1e3b8382f1b2173fb32ba249fe1f76db4a  check_montants.py
-db45253b847c68978742abe9badd519dfb77577dec174acf8f3923df6006f57c  finalize_deck.py
 14654f0a1f06fda93db8819af2c2462e13e1c6bbe8d716ab8d70c9cd0d624b38  remove_unused_slots.py
 17f94d1358ef48e1fb540a1b5ee084930848252718e3eddd7524049284dfc923  select_slots.py
 1a2094d83d7ad67db3deffb8fb2d338a789ab8f89b7fea1c407d5edda19be010  shrink_oversized_text.py
-ff2eb53b9b4c8e0a1887e16eee0446f0ee6153d3a61a436a7aa0ff8153051281  template_positions.json
