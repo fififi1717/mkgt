@@ -17,6 +17,14 @@ client_spec.json attend :
   "bibliotheque": "mkgt/Bibe_Def.pptx",
   "index": "mkgt/index.json",
   "slides_bibliotheque": [5, 6, 25, 26, 27, 28, 33, 34, 7, 29, 35, 38, 48, 51, 52],
+  "exclude_canvas": [19],
+  "_note_exclude_canvas": "Optionnel (ajouté v4.12). Liste de numéros de slides Canvas Master (1-19) à exclure de "
+                          "l'assemblage, typiquement pour éviter un doublon avec une slide bibliothèque équivalente "
+                          "(ex. slide bibliothèque 49 'Barème succession' rend la Canvas 19 'Annexe barème détaillé' "
+                          "redondante — cf. index.json, règle systématique 'slide_49_incluse'). Ne PAS utiliser pour "
+                          "retirer une slide narrative structurante (audit, diagnostic, stratégie, impact, synthèse) : "
+                          "R7 du skill interdit toujours la suppression arbitraire d'une slide Canvas Master par le "
+                          "consultant — ce champ sert uniquement à appliquer une règle d'anti-doublon déjà validée.",
   "patrimoine": {
      "familles": [
         {"nom": "ASSURANCE VIE", "actifs": [
@@ -175,12 +183,20 @@ CANVAS_PROCHAINES_ETAPES = 18
 CANVAS_ANNEXE_BAREME = 19
 
 
-def reorder_narratif(tmp_dir, canvas_slide_count, inserted, index_data):
+def reorder_narratif(tmp_dir, canvas_slide_count, inserted, index_data, exclude_canvas=None):
     """Réordonne <p:sldId> selon §5.2ter. Les positions Canvas 1..canvas_slide_count
     sont les N premiers <p:sldId> d'origine (ordre physique source, inchangé pour
     elles) ; les slides insérées (inserted, dans l'ordre de la sélection Étape 3)
     sont réparties en 2 groupes : pédagogique/conviction (juste après Impact) et
-    tarification/annexes (juste avant l'annexe barème)."""
+    tarification/annexes (juste avant l'annexe barème).
+
+    exclude_canvas (ajouté v4.12) : ensemble optionnel de numéros de slides Canvas
+    Master (1-19) à omettre du réordonnancement final — la slide reste physiquement
+    présente à ce stade (retirée ensuite par cleanup_excluded_canvas_slides), on ne
+    fait ici que ne pas l'inclure dans la liste ordonnée. Sert à l'anti-doublon
+    bibliothèque/Canvas (ex. slide 49 vs Canvas 19), jamais à une suppression libre
+    d'une slide narrative structurante (R7 du skill)."""
+    exclude_canvas = exclude_canvas or set()
     pres_path = os.path.join(tmp_dir, "ppt", "presentation.xml")
     pres = open(pres_path, encoding="utf-8").read()
 
@@ -211,25 +227,116 @@ def reorder_narratif(tmp_dir, canvas_slide_count, inserted, index_data):
     def canvas(n):
         return canvas_entries[n - 1]
 
-    ordered = []
-    ordered += [canvas(n) for n in CANVAS_ORDER_BLOCK_A]
-    ordered += [canvas(CANVAS_MOYENS)]
-    ordered += [canvas(CANVAS_SYNTHESE)]
-    ordered += [canvas(CANVAS_IMPACT)]
-    ordered += pedago_conviction
-    ordered += [canvas(CANVAS_AVANT_APRES)]
-    ordered += [canvas(CANVAS_ACCOMPAGNEMENT)]
-    ordered += [canvas(CANVAS_PROCHAINES_ETAPES)]
-    ordered += tarification_annexes
-    ordered += [canvas(CANVAS_ANNEXE_BAREME)]
+    def canvas_if_kept(n):
+        """Retourne [entry] normalement, [] si n est exclu (v4.12)."""
+        if n in exclude_canvas:
+            return []
+        return [canvas(n)]
 
-    if len(ordered) != len(all_entries):
-        die(f"réordonnancement incomplet : {len(ordered)} entrées produites, {len(all_entries)} attendues")
+    ordered = []
+    ordered += [canvas(n) for n in CANVAS_ORDER_BLOCK_A if n not in exclude_canvas]
+    ordered += canvas_if_kept(CANVAS_MOYENS)
+    ordered += canvas_if_kept(CANVAS_SYNTHESE)
+    ordered += canvas_if_kept(CANVAS_IMPACT)
+    ordered += pedago_conviction
+    ordered += canvas_if_kept(CANVAS_AVANT_APRES)
+    ordered += canvas_if_kept(CANVAS_ACCOMPAGNEMENT)
+    ordered += canvas_if_kept(CANVAS_PROCHAINES_ETAPES)
+    ordered += tarification_annexes
+    ordered += canvas_if_kept(CANVAS_ANNEXE_BAREME)
+
+    expected_len = len(all_entries) - len(exclude_canvas)
+    if len(ordered) != expected_len:
+        die(f"réordonnancement incomplet : {len(ordered)} entrées produites, {expected_len} attendues "
+            f"(exclude_canvas={sorted(exclude_canvas)})")
+
+    excluded_rids = [re.search(r'r:id="(rId\d+)"', canvas(n)).group(1) for n in sorted(exclude_canvas)]
 
     new_lst = "<p:sldIdLst>" + "".join(ordered) + "</p:sldIdLst>"
     pres = pres[:m.start()] + new_lst + pres[m.end():]
     open(pres_path, "w", encoding="utf-8").write(pres)
-    return [re.search(r'r:id="(rId\d+)"', e).group(1) for e in ordered]
+    return [re.search(r'r:id="(rId\d+)"', e).group(1) for e in ordered], excluded_rids
+
+
+def cleanup_excluded_canvas_slides(tmp_dir, exclude_canvas, excluded_rids):
+    """Supprime proprement (v4.12, corrigé après échec validate.py en test) les
+    parties du paquet .pptx correspondant aux slides Canvas exclues par
+    exclude_canvas : fichier slideN.xml, ses _rels, ses dépendances (notesSlide,
+    médias non partagés), l'Override dans [Content_Types].xml, et la Relationship
+    dans ppt/_rels/presentation.xml.rels. Appelé APRÈS reorder_narratif — la slide
+    est déjà absente de sldIdLst à ce stade, ceci ne fait que retirer les fichiers
+    devenus orphelins plutôt que de laisser des parties non référencées dans le zip.
+
+    v4.12 correctif : la première version utilisait `[^/]*` dans les regex de
+    nettoyage, qui s'arrête au premier '/' rencontré dans l'URL du Target ou du
+    ContentType (ex. "http://schemas...") — les Relationship et Override n'étaient
+    donc jamais réellement supprimés (match partiel silencieux). Remplacé par
+    `[^>]*?` (aucun '>' dans les attributs XML, c'est la seule garantie fiable).
+    Découvert par exécution réelle de validate.py en test, pas par relecture."""
+    if not exclude_canvas:
+        return
+    slides_dir = os.path.join(tmp_dir, "ppt", "slides")
+    rels_dir = os.path.join(slides_dir, "_rels")
+    media_dir = os.path.join(tmp_dir, "ppt", "media")
+    notes_dir = os.path.join(tmp_dir, "ppt", "notesSlides")
+    notes_rels_dir = os.path.join(notes_dir, "_rels")
+    ct_path = os.path.join(tmp_dir, "[Content_Types].xml")
+    pres_rels_path = os.path.join(tmp_dir, "ppt", "_rels", "presentation.xml.rels")
+
+    ct = open(ct_path, encoding="utf-8").read()
+    pres_rels = open(pres_rels_path, encoding="utf-8").read()
+
+    for n in sorted(exclude_canvas):
+        slide_name = f"slide{n}.xml"
+        slide_path = os.path.join(slides_dir, slide_name)
+        slide_rels_path = os.path.join(rels_dir, f"{slide_name}.rels")
+
+        # Découvrir les dépendances (notesSlide, médias) AVANT de supprimer la slide
+        dependent_targets = []
+        if os.path.exists(slide_rels_path):
+            rels_xml = open(slide_rels_path, encoding="utf-8").read()
+            dependent_targets = re.findall(r'Target="([^"]+)"', rels_xml)
+
+        if os.path.exists(slide_path):
+            os.remove(slide_path)
+        if os.path.exists(slide_rels_path):
+            os.remove(slide_rels_path)
+        ct = re.sub(rf'<Override PartName="/ppt/slides/{slide_name}"[^>]*?/>', "", ct)
+
+        for target in dependent_targets:
+            # Targets relatifs type "../notesSlides/notesSlideN.xml" ou "../media/xxx.png"
+            norm = target.replace("../", "")
+            dep_path = os.path.join(tmp_dir, "ppt", norm)
+            if not os.path.exists(dep_path):
+                continue
+            if "notesSlides/" in norm and norm.endswith(".xml"):
+                notes_name = os.path.basename(norm)
+                os.remove(dep_path)
+                notes_rels_path = os.path.join(notes_rels_dir, f"{notes_name}.rels")
+                if os.path.exists(notes_rels_path):
+                    os.remove(notes_rels_path)
+                ct = re.sub(rf'<Override PartName="/ppt/notesSlides/{notes_name}"[^>]*?/>', "", ct)
+                print(f"  [exclude_canvas] notesSlide dépendante supprimée : {notes_name}")
+            elif "media/" in norm:
+                # Ne supprimer le média que s'il n'est référencé par AUCUNE autre slide restante
+                media_name = os.path.basename(norm)
+                still_used = False
+                for f in os.listdir(rels_dir) if os.path.isdir(rels_dir) else []:
+                    other_rels = open(os.path.join(rels_dir, f), encoding="utf-8").read()
+                    if media_name in other_rels:
+                        still_used = True
+                        break
+                if not still_used:
+                    os.remove(dep_path)
+                    print(f"  [exclude_canvas] média orphelin supprimé : {media_name}")
+
+    for rid in excluded_rids:
+        pres_rels = re.sub(rf'<Relationship Id="{rid}"[^>]*?/>', "", pres_rels)
+
+    open(ct_path, "w", encoding="utf-8").write(ct)
+    open(pres_rels_path, "w", encoding="utf-8").write(pres_rels)
+    print(f"  [exclude_canvas] {len(exclude_canvas)} slide(s) Canvas retirée(s) proprement : "
+          f"{sorted(exclude_canvas)}")
 
 
 # ---------------------------------------------------------------------------
@@ -378,7 +485,10 @@ def main():
     inserted = insert_library_slides(tmp_dir, biblio_tmp, spec["slides_bibliotheque"])
 
     print("[2/4] Réordonnancement narratif (§5.2ter)...")
-    ordered_rids = reorder_narratif(tmp_dir, canvas_slide_count, inserted, index_data)
+    exclude_canvas = set(spec.get("exclude_canvas", []))
+    ordered_rids, excluded_rids = reorder_narratif(tmp_dir, canvas_slide_count, inserted, index_data, exclude_canvas)
+    if exclude_canvas:
+        cleanup_excluded_canvas_slides(tmp_dir, exclude_canvas, excluded_rids)
 
     canvas_folio_map = spec.get("canvas_folio_map")
     if canvas_folio_map:
@@ -407,8 +517,8 @@ def main():
                 full = os.path.join(root, f)
                 zf.write(full, os.path.relpath(full, tmp_dir))
 
-    total_slides = canvas_slide_count + len(inserted)
-    print(f"\nOK -> {args.out}  ({total_slides} slides : {canvas_slide_count} Canvas + {len(inserted)} bibliothèque)")
+    total_slides = canvas_slide_count - len(exclude_canvas) + len(inserted)
+    print(f"\nOK -> {args.out}  ({total_slides} slides : {canvas_slide_count - len(exclude_canvas)} Canvas + {len(inserted)} bibliothèque)")
 
     if not args.skip_validate:
         validate_script = os.path.join(os.path.dirname(__file__), "..", "..", "skills", "public",
