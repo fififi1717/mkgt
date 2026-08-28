@@ -8,10 +8,55 @@ corrige le bug "cadres vides visibles" trouvé en crash-test (27/08/2026).
 ⚠ Ne fait PAS le reflow (élargir les colonnes restantes) : supprime proprement
 les shapes en trop, mais laisse l'espace vide. Le reflow réel nécessite des
 variantes de mise en page pré-construites (1/2/3 colonnes) — chantier séparé.
+
+FUSION 28/08/2026 (nettoyage dépôt, demande consultant) : select_slots.py
+intégré ici — c'était un fichier de 20 lignes, une seule fonction, jamais
+appelée seule en production (toujours importée par finalize_deck.py). Fusion
+sans changement de comportement, sauf un correctif : nb_elements_reels
+négatif est désormais rejeté explicitement (bug identifié au crash-test #3
+du 27/08/2026, jamais corrigé jusqu'ici — un slicing Python silencieux
+laissait passer un résultat incorrect sans aucune alerte).
 """
 import re, sys, zipfile, shutil
 
 TOLERANCE_EMU = 20000  # ~1.6mm — absorbe l'écart texte/rectangle de fond (cf. crash-test : ~9144 EMU observé)
+
+
+def compute_slots_a_supprimer(template_positions: dict, nb_elements_reels: dict) -> dict:
+    """Traduit "nombre d'éléments réels pour ce dossier" en positions XML à
+    supprimer, à partir du référentiel générique template_positions.json.
+
+    Usage :
+        slots = compute_slots_a_supprimer(template_positions, {"12": 2, "13": 2, "15": 2})
+        # -> {"12": {"x": [5897880]}, "13": {"y": [...]}, "15": {"x": [5897880]}}
+    """
+    slots_variables = template_positions["slots_variables"]
+    result = {}
+    for slide_n, nb_reel in nb_elements_reels.items():
+        if slide_n not in slots_variables:
+            raise ValueError(f"slide {slide_n} absente de template_positions['slots_variables']")
+        if nb_reel < 0:
+            # CORRECTIF 28/08/2026 : un nombre négatif ne devrait jamais arriver en
+            # amont, mais rester silencieux ici (slicing positions[nb_reel:] avec un
+            # indice négatif) produisait un résultat incorrect sans aucune alerte —
+            # trouvé au crash-test #3 (27/08/2026), non corrigé jusqu'ici.
+            raise ValueError(
+                f"slide {slide_n} : nb_elements_reels={nb_reel} négatif — valeur "
+                f"invalide, à corriger en amont (Étape 2) avant de poursuivre."
+            )
+        conf = slots_variables[slide_n]
+        positions = conf["positions"]
+        max_slots = conf["max_slots"]
+        if nb_reel > max_slots:
+            raise ValueError(
+                f"slide {slide_n} ({conf['description']}) : {nb_reel} éléments réels "
+                f"mais le template n'a que {max_slots} slots — cas non géré automatiquement, "
+                f"cf. limite dure documentée (comme slide 8 / 3 enfants)."
+            )
+        a_supprimer = positions[nb_reel:]
+        if a_supprimer:
+            result[slide_n] = {conf["axe"]: a_supprimer}
+    return result
 
 def remove_shapes_at_offset(xml: str, x_values: set = None, y_values: set = None) -> tuple[str, int]:
     """Supprime les formes dont l'offset X (colonnes, ex. slide12/15) OU l'offset
@@ -66,5 +111,17 @@ def apply(src_pptx, dst_pptx, slide_slots):
     print(f'OK -> {dst_pptx}')
 
 if __name__ == '__main__':
-    # Test : slide 12, retirer la colonne 3 (x=5897880, cf. inspection XML)
-    apply(sys.argv[1], sys.argv[2], {12: {"x": [5897880]}})
+    if len(sys.argv) == 3:
+        # Test : slide 12, retirer la colonne 3 (x=5897880, cf. inspection XML)
+        apply(sys.argv[1], sys.argv[2], {12: {"x": [5897880]}})
+    elif len(sys.argv) == 2:
+        # Mode select_slots.py d'origine : affiche les slots calculés sans les appliquer
+        import json
+        tp = json.load(open(sys.argv[1], encoding="utf-8"))
+        nb = {"12": 2, "13": 2, "15": 2}
+        slots = compute_slots_a_supprimer(tp, nb)
+        print(json.dumps(slots, ensure_ascii=False, indent=2))
+    else:
+        print("Usage : remove_unused_slots.py <src.pptx> <dst.pptx>   (applique la suppression)")
+        print("    ou : remove_unused_slots.py <template_positions.json>   (calcule les slots, exemple)")
+        sys.exit(1)

@@ -67,7 +67,8 @@ import remove_unused_slots
 import shrink_oversized_text
 import check_montants
 import check_charts
-import select_slots
+# select_slots.py fusionné dans remove_unused_slots.py le 28/08/2026 (nettoyage dépôt) —
+# compute_slots_a_supprimer y est désormais définie directement.
 
 
 def main():
@@ -89,7 +90,7 @@ def main():
     template_positions = json.load(open(args.template_positions, encoding="utf-8"))
     dossier = json.load(open(args.dossier, encoding="utf-8"))
 
-    slots = select_slots.compute_slots_a_supprimer(
+    slots = remove_unused_slots.compute_slots_a_supprimer(
         template_positions, dossier.get("nb_elements_reels", {})
     )
     slides_check = template_positions["slides_personnalisees"]

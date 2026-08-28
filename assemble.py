@@ -497,6 +497,19 @@ def main():
         print("[3/4] canvas_folio_map absent de la spec — construction automatique depuis "
               "le Canvas Master d'origine (correctif 27/08/2026)...")
         canvas_folio_map = build_default_canvas_folio_map(canvas_path)
+    # CORRECTIF 28/08/2026 (retour consultant — capture d'écran slide bibliothèque
+    # "Fiscalité de l'assurance vie") : les slides bibliothèque insérées portent
+    # elles aussi un folio statique figé dans Bibe_Def.pptx, identique à leur
+    # position dans le catalogue (§3.4) — ex. la slide catalogue n°1 affiche "1"
+    # même une fois assemblée en position 16 d'un dossier réel. build_default_
+    # canvas_folio_map() ne scanne QUE le Canvas Master d'origine et ignorait donc
+    # ces folios, jamais renumérotés. On les ajoute ici au même canvas_folio_map,
+    # en réutilisant le mécanisme de remplacement de renumber_canvas_folios déjà
+    # existant (aucune duplication de logique) : pour chaque slide insérée, le
+    # folio d'origine est simplement str(pos) (vérifié identique au texte réel
+    # sur les 4 slides testées le 28/08/2026 : positions 1, 2, 3, 7, 33).
+    for e in inserted:
+        canvas_folio_map[f"rId{e['rid']}"] = str(e["pos"])
     updated = renumber_canvas_folios(tmp_dir, ordered_rids, canvas_folio_map)
     for slide_file, old, new in updated:
         print(f"  {slide_file}: folio {old} -> {new}")
