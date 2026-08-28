@@ -3,10 +3,8 @@
 Affilior — Finalisation post-remplissage d'un dossier (Étape 5, après le
 remplissage de contenu qui suit assemble.py).
 
-Chaîne 4 contrôles/corrections (mise à jour v4.14, ajout de check_charts issu
-d'une session parallèle du 28/08/2026 — auparavant 3 contrôles seulement,
-issus du crash-test du 27/08/2026), dans cet ordre (chacun opère sur le
-fichier produit par le précédent) :
+Chaîne 4 contrôles/corrections, dans cet ordre (chacun opère sur le fichier
+produit par le précédent) :
 
   1. remove_unused_slots  — supprime réellement les formes des slots vides
                              (règle 5.2quater) plutôt que de vider leur texte.
@@ -14,7 +12,12 @@ fichier produit par le précédent) :
                              texte qui déborde des zones "gros chiffre" ;
                              signale ⚠ ce qui reste illisible plutôt que de
                              deviner davantage.
-  3. check_charts          — contrôle NON BLOQUANT (+ correction optionnelle
+  3. check_montants        — contrôle NON BLOQUANT de traçabilité : tout
+                             montant du deck introuvable dans les sources
+                             déclarées (chiffres_source) est signalé, jamais
+                             bloqué (la validation métier reste à l'associé
+                             IP — cf. décision du 27/08/2026).
+  4. check_charts          — contrôle NON BLOQUANT (+ correction optionnelle
                              via --fix-charts) des graphiques natifs (donuts) :
                              assemble.py ne touche jamais aux séries de
                              graphique, seuls les placeholders texte/tableaux
@@ -22,11 +25,21 @@ fichier produit par le précédent) :
                              les donuts encore aux valeurs de démo du template
                              pendant que le texte autour affiche les vrais
                              chiffres (bug confirmé crash-test 28/08/2026).
-  4. check_montants        — contrôle NON BLOQUANT de traçabilité : tout
-                             montant du deck introuvable dans les sources
-                             déclarées (chiffres_source) est signalé, jamais
-                             bloqué (la validation métier reste à l'associé
-                             IP — cf. décision du 27/08/2026).
+
+CORRECTIF ORDRE (constat critique 29/08/2026) : check_montants passe désormais
+AVANT check_charts (inversion de l'ordre v4.14). Raison : --fix-charts recharge
+le deck avec python-pptx (Presentation().save()), ce qui RENUMÉROTE les
+fichiers ppt/slides/slideN.xml selon l'ordre visuel de la présentation —
+alors qu'assemble.py conservait jusque-là les noms de fichiers d'origine du
+Canvas Master indépendamment de l'ordre narratif (§5.2ter). Conséquence
+trouvée en crash-test réel (2 clients fictifs, 29/08/2026) : après un
+--fix-charts, "slide18.xml" pouvait correspondre à une slide bibliothèque
+pédagogique insérée (jamais censée être contrôlée, R8) au lieu de la vraie
+slide Canvas "Prochaines étapes" — faux positifs sur des seuils légaux ET
+disparition silencieuse du contrôle sur les vraies slides personnalisées.
+Le fix-charts ne touchant jamais le texte des slides, contrôler les montants
+AVANT cette étape (sur des noms de fichiers encore fiables) est rigoureusement
+équivalent et élimine le problème sans toucher à check_montants lui-même.
 
 Rien ici ne remplace la QA visuelle (planche contact, §5.6) ni la validation
 associé IP (R4). Ce sont des filets de sécurité mécaniques pour les erreurs
@@ -90,9 +103,23 @@ def main():
     template_positions = json.load(open(args.template_positions, encoding="utf-8"))
     dossier = json.load(open(args.dossier, encoding="utf-8"))
 
-    slots = remove_unused_slots.compute_slots_a_supprimer(
-        template_positions, dossier.get("nb_elements_reels", {})
-    )
+    # CORRECTIF (bug C, crash-test #3 27/08/2026 — toujours présent avant ce
+    # correctif, confirmé en direct le 29/08/2026 lors du crash-test à deux
+    # clients) : compute_slots_a_supprimer lève un ValueError brut (dépassement
+    # de plafond 12/13/15, ou nb_elements_reels négatif) qui remontait jusqu'ici
+    # en traceback Python complet sur stderr — pas de message clair pour le
+    # consultant, contrairement au style die() d'assemble.py. Encadré désormais.
+    try:
+        slots = remove_unused_slots.compute_slots_a_supprimer(
+            template_positions, dossier.get("nb_elements_reels", {})
+        )
+    except ValueError as e:
+        print(f"Erreur : {e}", file=sys.stderr)
+        print("Erreur : dossier_client.json invalide (nb_elements_reels) — "
+              "corriger la valeur en amont (Étape 2) avant de relancer la génération. "
+              "Aucun fichier n'a été produit.", file=sys.stderr)
+        sys.exit(1)
+
     slides_check = template_positions["slides_personnalisees"]
     chiffres_source = set(dossier.get("chiffres_source", []))
 
@@ -110,57 +137,30 @@ def main():
         print("\n=== [2/4] Réduction des zones en débordement ===")
         report_shrink = shrink_oversized_text.apply(step1, step2, slides_check)
 
-        step3 = str(Path(tmp) / "step3_charts.pptx")
-        print("\n=== [3/4] Contrôle des graphiques natifs (donuts, non bloquant) ===")
-        chart_alerts, chart_fixes = check_charts.check(step2, dossier)
-        chart_fixed_slides = set()
-        if chart_alerts:
-            for slide_n, name, cats, vals, msg in chart_alerts:
-                print(f"  slide {slide_n:<3} série « {name} » {dict(zip(cats, vals))}")
-                print(f"    {msg}")
-        else:
-            print("✓ Aucun graphique laissé aux valeurs de démonstration du template.")
-
-        if args.fix_charts and chart_fixes:
-            import check_charts as _cc_mod
-            from pptx import Presentation as _Presentation
-            from pptx.chart.data import CategoryChartData as _CCD
-            prs_charts = _Presentation(step2)
-            expected = {"Allocation": dossier.get("allocation_pct"),
-                        "Liquidité": dossier.get("liquidite_pct")}
-            for slide_n, slide in enumerate(prs_charts.slides, start=1):
-                for shape in slide.shapes:
-                    if not shape.has_chart:
-                        continue
-                    chart = shape.chart
-                    plot = chart.plots[0]
-                    categories = list(plot.categories)
-                    for series in plot.series:
-                        values = list(series.values)
-                        exp = expected.get(series.name)
-                        if exp and _cc_mod._matches_demo(categories, values) \
-                                and set(exp.keys()) == set(categories) \
-                                and abs(sum(exp.values()) - 100) <= 0.5:
-                            cd = _CCD()
-                            cd.categories = categories
-                            cd.add_series(series.name, [exp[c] for c in categories])
-                            chart.replace_data(cd)
-                            chart_fixed_slides.add(slide_n)
-            prs_charts.save(step3)
-            print(f"✓ graphique(s) corrigé(s) automatiquement sur la/les slide(s) {sorted(chart_fixed_slides)}.")
-        else:
-            shutil.copy(step2, step3)
-            if chart_fixes and not args.fix_charts:
-                print("  (correction disponible mais --fix-charts non passé — donuts laissés tels quels)")
-
-        shutil.copy(step3, args.out)
-        print(f"\n-> Fichier finalisé : {args.out}")
-
-        print("\n=== [4/4] Contrôle de traçabilité des montants (non bloquant) ===")
+        # CORRECTIF (constat critique 29/08/2026) : le contrôle de traçabilité
+        # des montants (étape [4/4] ci-dessous) tourne maintenant sur `step2`
+        # — c'est-à-dire AVANT toute correction de graphique — et non plus sur
+        # le fichier final. Raison : la correction --fix-charts recharge le
+        # deck avec python-pptx (Presentation(...).save(...)), qui RENUMÉROTE
+        # les fichiers ppt/slides/slideN.xml selon l'ORDRE VISUEL de la
+        # présentation, alors qu'assemble.py conservait jusque-là les noms de
+        # fichiers d'origine du Canvas Master indépendamment de l'ordre
+        # narratif. Résultat observé en crash-test réel (2 clients, 29/08/2026) :
+        # après un --fix-charts, "ppt/slides/slide18.xml" pouvait correspondre
+        # à une slide bibliothèque pédagogique insérée (jamais censée être
+        # contrôlée, R8) au lieu de la vraie slide Canvas "Prochaines étapes"
+        # — génère de faux positifs sur des seuils légaux ET fait disparaître
+        # silencieusement le contrôle sur les vraies slides personnalisées.
+        # Le fix-charts ne touche JAMAIS le texte des slides (uniquement les
+        # séries de graphique), donc les montants à contrôler sont rigoureu-
+        # sement identiques avant/après — faire le contrôle sur step2 (noms de
+        # fichiers encore fiables) élimine le problème sans toucher à la
+        # logique de check_montants elle-même.
+        print("\n=== [3/4] Contrôle de traçabilité des montants (non bloquant) ===")
         allowed_slides = {f"ppt/slides/slide{n}.xml" for n in slides_check}
         found = [
             (s, r, v)
-            for (s, r, v) in check_montants.extract_amounts_from_pptx(args.out)
+            for (s, r, v) in check_montants.extract_amounts_from_pptx(step2)
             if s in allowed_slides
         ]
         seen = set()
@@ -180,6 +180,55 @@ def main():
                 print(f"  ⚠ {slide.replace('ppt/slides/', ''):15s} {raw:>15s}")
         else:
             print("✓ Tous les montants contrôlés sont tracés à une source déclarée.")
+
+        # --- [4/4] Graphiques natifs (donuts) — après les montants (cf. correctif
+        # ci-dessus) puisque cette étape est la seule à faire un aller-retour
+        # python-pptx susceptible de renuméroter les fichiers slideN.xml.
+        step3 = str(Path(tmp) / "step3_charts.pptx")
+        print("\n=== [4/4] Contrôle des graphiques natifs (donuts, non bloquant) ===")
+        chart_alerts, chart_fixes = check_charts.check(step2, dossier)
+        chart_fixed_slides = set()
+        if chart_alerts:
+            for slide_n, name, cats, vals, msg in chart_alerts:
+                print(f"  slide {slide_n:<3} série « {name} » {dict(zip(cats, vals))}")
+                print(f"    {msg}")
+        else:
+            print("✓ Aucun graphique laissé aux valeurs de démonstration du template.")
+
+        if args.fix_charts and chart_fixes:
+            # CORRECTIF (déduplication, constat 29/08/2026) : appelle désormais
+            # check_charts.apply_fixes(), implémentation unique partagée avec
+            # la CLI check_charts.py --fix (auparavant recopiée ici à l'identique,
+            # avec le risque de divergence silencieuse entre les deux versions).
+            applied, per_series = check_charts.apply_fixes(step2, dossier, step3)
+            fully_fixed_slides = set()
+            partially_left_slides = set()
+            for slide_n, name, ok, reason in per_series:
+                if ok:
+                    fully_fixed_slides.add(slide_n)
+                else:
+                    partially_left_slides.add(slide_n)
+                    print(f"  ⚠ slide {slide_n} « {name} » NON corrigé — {reason}")
+            chart_fixed_slides = fully_fixed_slides
+            # CORRECTIF (constat mineur 29/08/2026) : message désormais précis
+            # PAR SÉRIE — auparavant "slide(s) corrigée(s)" pouvait laisser croire
+            # que TOUS les graphiques d'une slide étaient corrigés alors qu'un
+            # seul des deux donuts pouvait l'être (cas d'une répartition fournie
+            # mais ambiguë à côté d'une répartition valide sur la même slide).
+            if applied:
+                print(f"✓ {applied} graphique(s) corrigé(s) automatiquement "
+                      f"(slide(s) {sorted(fully_fixed_slides)}).")
+            ambiguous_only_slides = partially_left_slides - fully_fixed_slides
+            if ambiguous_only_slides:
+                print(f"⚠ slide(s) {sorted(ambiguous_only_slides)} : au moins un graphique "
+                      f"reste en valeurs de démo, non corrigé — voir détail ci-dessus.")
+        else:
+            shutil.copy(step2, step3)
+            if chart_fixes and not args.fix_charts:
+                print("  (correction disponible mais --fix-charts non passé — donuts laissés tels quels)")
+
+        shutil.copy(step3, args.out)
+        print(f"\n-> Fichier finalisé : {args.out}")
 
         print("\n=== Résumé pour le message de livraison (§5.7) ===")
         unresolved = [r for r in report_shrink if not r[4]]

@@ -468,9 +468,19 @@ def main():
         if not os.path.exists(p):
             die(f"{p} introuvable — cloner le dépôt mkgt avant d'appeler ce script.")
 
-    shutil.copy2(canvas_path, args.out)
+    # CORRECTIF (constat crash-test 29/08/2026, bug B du crash-test #3 du
+    # 27/08/2026) : on ne construit plus jamais directement à args.out. Tout
+    # le travail (extraction, rezip) se fait dans un fichier de chantier
+    # temporaire ; args.out n'est écrit/écrasé qu'une fois validate.py passé
+    # avec succès (ou --skip-validate explicite). Avant ce correctif, un
+    # échec de validation laissait un fichier non conforme physiquement
+    # présent à args.out (potentiellement en écrasant un livrable valide
+    # d'un run précédent dès la ligne suivante, avant même toute validation).
+    build_dir = tempfile.mkdtemp()
+    work_out = os.path.join(build_dir, "_chantier.pptx")
+    shutil.copy2(canvas_path, work_out)
     tmp_dir = tempfile.mkdtemp()
-    with zipfile.ZipFile(args.out) as z:
+    with zipfile.ZipFile(work_out) as z:
         z.extractall(tmp_dir)
     biblio_tmp = tempfile.mkdtemp()
     with zipfile.ZipFile(biblio_path) as z:
@@ -521,37 +531,55 @@ def main():
         print(f"[4/4] Slide 5 (patrimoine) : {len(lines)} lignes calculées avec les constantes de style "
               f"(non encore injectées en XML natif dans cette v1 — voir notes de livraison).")
 
-    # Rezip
-    if os.path.exists(args.out):
-        os.remove(args.out)
-    with zipfile.ZipFile(args.out, "w", zipfile.ZIP_DEFLATED) as zf:
+    # Rezip — toujours vers le chantier temporaire, jamais directement args.out
+    # (cf. correctif ci-dessus).
+    if os.path.exists(work_out):
+        os.remove(work_out)
+    with zipfile.ZipFile(work_out, "w", zipfile.ZIP_DEFLATED) as zf:
         for root, dirs, files in os.walk(tmp_dir):
             for f in files:
                 full = os.path.join(root, f)
                 zf.write(full, os.path.relpath(full, tmp_dir))
 
     total_slides = canvas_slide_count - len(exclude_canvas) + len(inserted)
-    print(f"\nOK -> {args.out}  ({total_slides} slides : {canvas_slide_count - len(exclude_canvas)} Canvas + {len(inserted)} bibliothèque)")
 
-    if not args.skip_validate:
-        validate_script = os.path.join(os.path.dirname(__file__), "..", "..", "skills", "public",
-                                        "pptx", "scripts", "office", "validate.py")
-        validate_script = "/mnt/skills/public/pptx/scripts/office/validate.py"
-        if os.path.exists(validate_script):
-            print("\n--- validate.py ---")
-            r = subprocess.run([sys.executable, validate_script, args.out, "--original", canvas_path],
-                                capture_output=True, text=True)
-            print(r.stdout)
-            if r.returncode != 0:
-                print(r.stderr, file=sys.stderr)
-                die("validate.py a échoué — dossier NON conforme, ne pas livrer au consultant.")
-        else:
-            die("validate.py introuvable à l'emplacement attendu "
-                "(/mnt/skills/public/pptx/scripts/office/validate.py). "
-                "CORRECTIF 27/08/2026 : ce cas bloquait auparavant seulement avec un print, "
-                "et le script continuait -> un dossier pouvait sortir sans AUCUNE validation "
-                "structurelle sans que personne ne s'en aperçoive. Désormais bloquant. "
-                "Utiliser --skip-validate explicitement si une validation manuelle est prévue.")
+    def _promote_to_out():
+        """N'écrit/n'écrase args.out qu'une fois le chantier validé."""
+        if os.path.exists(args.out):
+            os.remove(args.out)
+        shutil.move(work_out, args.out)
+        shutil.rmtree(build_dir, ignore_errors=True)
+
+    if args.skip_validate:
+        _promote_to_out()
+        print(f"\nOK -> {args.out}  ({total_slides} slides : {canvas_slide_count - len(exclude_canvas)} Canvas + {len(inserted)} bibliothèque)"
+              f"  [validation ignorée, --skip-validate]")
+        return
+
+    validate_script = "/mnt/skills/public/pptx/scripts/office/validate.py"
+    if os.path.exists(validate_script):
+        print("\n--- validate.py ---")
+        r = subprocess.run([sys.executable, validate_script, work_out, "--original", canvas_path],
+                            capture_output=True, text=True)
+        print(r.stdout)
+        if r.returncode != 0:
+            print(r.stderr, file=sys.stderr)
+            shutil.rmtree(build_dir, ignore_errors=True)
+            die("validate.py a échoué — dossier NON conforme, ne pas livrer au consultant. "
+                "CORRECTIF (constat 29/08/2026) : aucun fichier n'a été écrit ni modifié à "
+                f"--out ({args.out}) — le chantier invalide a été supprimé, un éventuel "
+                "livrable précédent à ce chemin reste intact.")
+        _promote_to_out()
+        print(f"\nOK -> {args.out}  ({total_slides} slides : {canvas_slide_count - len(exclude_canvas)} Canvas + {len(inserted)} bibliothèque)")
+    else:
+        shutil.rmtree(build_dir, ignore_errors=True)
+        die("validate.py introuvable à l'emplacement attendu "
+            "(/mnt/skills/public/pptx/scripts/office/validate.py). "
+            "CORRECTIF 27/08/2026 : ce cas bloquait auparavant seulement avec un print, "
+            "et le script continuait -> un dossier pouvait sortir sans AUCUNE validation "
+            "structurelle sans que personne ne s'en aperçoive. Désormais bloquant. "
+            "Utiliser --skip-validate explicitement si une validation manuelle est prévue. "
+            f"Aucun fichier écrit à --out ({args.out}).")
 
 
 if __name__ == "__main__":

@@ -117,6 +117,57 @@ def check(pptx_path, dossier):
     return alerts, fixes
 
 
+def apply_fixes(pptx_path, dossier, out_path):
+    """CORRECTIF (déduplication, constat 29/08/2026) : implémentation UNIQUE de
+    la correction des graphiques, partagée entre check_charts.py --fix et
+    finalize_deck.py (qui dupliquait auparavant exactement cette logique en
+    ligne, avec le risque de divergence silencieuse entre les deux versions).
+
+    Ouvre pptx_path, corrige les séries non ambiguës (mêmes règles que check()),
+    sauvegarde vers out_path. Retourne (applied, per_series) où per_series est
+    une liste de tuples (slide_n, series_name, corrige: bool, raison) — assez
+    détaillée pour qu'un message de synthèse distingue "corrigé" de "laissé
+    tel quel" SÉRIE PAR SÉRIE, même quand plusieurs graphiques cohabitent sur
+    la même slide (cf. constat 29/08/2026 : le message précédent parlait de
+    "slide corrigée" sans préciser qu'un des deux donuts pouvait rester faux).
+    """
+    prs = Presentation(pptx_path)
+    expected = {"Allocation": dossier.get("allocation_pct"),
+                "Liquidité": dossier.get("liquidite_pct")}
+    per_series = []
+    applied = 0
+    for slide_n, slide in enumerate(prs.slides, start=1):
+        for shape in slide.shapes:
+            if not shape.has_chart:
+                continue
+            chart = shape.chart
+            plot = chart.plots[0]
+            categories = list(plot.categories)
+            for series in plot.series:
+                values = list(series.values)
+                if not _matches_demo(categories, values):
+                    continue  # déjà personnalisé ou non concerné, rien à corriger ici
+                exp = expected.get(series.name)
+                if not exp:
+                    per_series.append((slide_n, series.name, False, "aucune donnée client fournie"))
+                    continue
+                if set(exp.keys()) != set(categories):
+                    per_series.append((slide_n, series.name, False, "catégories fournies ≠ catégories du template"))
+                    continue
+                total = sum(exp.values())
+                if abs(total - 100) > 0.5:
+                    per_series.append((slide_n, series.name, False, f"somme fournie à {total}% (≠100%)"))
+                    continue
+                cd = CategoryChartData()
+                cd.categories = categories
+                cd.add_series(series.name, [exp[c] for c in categories])
+                chart.replace_data(cd)
+                applied += 1
+                per_series.append((slide_n, series.name, True, "corrigé"))
+    prs.save(out_path)
+    return applied, per_series
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("src")
@@ -145,35 +196,13 @@ def main():
         if not fixes:
             print("\nAucune correction applicable automatiquement (voir alertes ci-dessus).")
             return
-        prs = Presentation(args.src)
-        # ré-ouvrir pour appliquer réellement (les objets chart de check() venaient
-        # d'une instance Presentation distincte) — on refait le calcul en une passe
-        # unique pour éviter toute divergence entre contrôle et application.
-        expected = {"Allocation": dossier.get("allocation_pct"),
-                    "Liquidité": dossier.get("liquidite_pct")}
-        applied = 0
-        for slide in prs.slides:
-            for shape in slide.shapes:
-                if not shape.has_chart:
-                    continue
-                chart = shape.chart
-                plot = chart.plots[0]
-                categories = list(plot.categories)
-                for series in plot.series:
-                    values = list(series.values)
-                    exp = expected.get(series.name)
-                    if exp and _matches_demo(categories, values) and set(exp.keys()) == set(categories) \
-                            and abs(sum(exp.values()) - 100) <= 0.5:
-                        cd = CategoryChartData()
-                        cd.categories = categories
-                        cd.add_series(series.name, [exp[c] for c in categories])
-                        chart.replace_data(cd)
-                        applied += 1
-        prs.save(args.out)
+        # CORRECTIF (déduplication, constat 29/08/2026) : appelle désormais
+        # apply_fixes(), implémentation unique partagée avec finalize_deck.py.
+        applied, per_series = apply_fixes(args.src, dossier, args.out)
         print(f"\n✓ {applied} graphique(s) corrigé(s) -> {args.out}")
-        if applied < len(fixes):
-            print("⚠ Certaines corrections signalées n'ont pas pu être ré-appliquées à l'écriture "
-                  "— relancer le contrôle sur le fichier de sortie avant livraison.")
+        for slide_n, name, ok, reason in per_series:
+            if not ok:
+                print(f"  ⚠ slide {slide_n} « {name} » NON corrigé — {reason}")
 
 
 if __name__ == "__main__":
