@@ -95,6 +95,26 @@ def apply(src_pptx, dst_pptx, slide_n, x_values, y_values):
     for name, x, y in details:
         print(f'    - {name:14s} x={x} y={y}')
 
+    # CORRECTIF v4.20 (30/08/2026, crash-test double client) : un résultat à
+    # 0 forme supprimée s'affichait auparavant de façon aussi discrète qu'un
+    # résultat normal ("0 forme(s) supprimée(s)" ressemble à une ligne de log
+    # anodine) — repéré en crash-test : sur les 2 dossiers testés, les
+    # offsets 'solution_slot_2_y' de template_positions.json ne correspondent
+    # à AUCUNE forme réelle du Cans_Mstr.pptx en production (la slide 15 n'a
+    # plus qu'un seul emplacement solution par axe depuis une refonte non
+    # répercutée dans template_positions.json — cf. avertissement dans ce
+    # fichier). Sans ce correctif, le script « réussit » silencieusement sans
+    # rien faire, ce qui peut laisser croire à tort que le double placement a
+    # été traité. Avertissement explicite désormais si x_values/y_values sont
+    # non vides mais qu'aucune forme n'a matché.
+    if removed == 0 and (x_values or y_values):
+        print("⚠ ATTENTION : 0 forme supprimée alors qu'une suppression était demandée. "
+              "Cela signifie très probablement que les offsets fournis (cf. "
+              "template_positions.json['slots_variables']['15']) ne correspondent à AUCUNE "
+              "forme réelle de ce fichier — vérifier si le Canvas Master a changé de "
+              "structure (cf. avertissement v4.20 dans template_positions.json) avant de "
+              "considérer cette étape comme traitée.")
+
     zout = zipfile.ZipFile(dst_pptx, 'w', zipfile.ZIP_DEFLATED)
     for it in items:
         zout.writestr(it, data[it.filename])

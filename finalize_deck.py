@@ -67,6 +67,20 @@ dossier_client.json est PROPRE À CE CLIENT — à reconstruire à chaque dossie
 allocation_pct et liquidite_pct sont OPTIONNELS (ajoutés v4.14, cf. check_charts.py) :
 sans eux, l'étape 3/4 se contente de signaler ⚠ si un graphique est resté en
 valeurs de démo, sans pouvoir le corriger automatiquement même avec --fix-charts.
+
+CORRECTIF v4.20 (30/08/2026, crash-test double client) : allocation_pct et
+liquidite_pct devaient jusqu'ici être saisis DEUX FOIS à l'identique — une
+fois dans plan.json (pour personalize_canvas.py, qui corrige les 6 LABELS
+texte de la slide 6) et une seconde fois dans dossier_client.json (pour
+check_charts.py, qui corrige le GRAPHIQUE natif). Un oubli dans l'un des deux
+reproduit exactement le bug historique R14 : légende correcte, donut resté
+aux valeurs de démo — repéré en crash-test le 30/08/2026 sur les 2 dossiers
+testés. `--plan` (optionnel, nouveau) permet de fournir une seule fois le
+plan.json déjà utilisé par personalize_canvas.py : si allocation_pct/
+liquidite_pct sont absents de --dossier, ils sont repris depuis --plan.
+S'ils sont présents aux DEUX endroits et diffèrent, un avertissement bloque
+la correction automatique plutôt que de choisir silencieusement une source
+(cf. merge_allocation_sources ci-dessous).
 """
 import argparse
 import json
@@ -84,6 +98,31 @@ import check_charts
 # compute_slots_a_supprimer y est désormais définie directement.
 
 
+def merge_allocation_sources(dossier, plan, warnings):
+    """CORRECTIF v4.20 — fusionne allocation_pct/liquidite_pct de --plan dans
+    dossier UNIQUEMENT si absents de dossier (dossier reste prioritaire, pour
+    compatibilité avec les dossiers existants qui les fournissent déjà en
+    double). Si les deux sources sont présentes et diffèrent, retire la clé
+    de dossier plutôt que de choisir arbitrairement : mieux vaut un ⚠ "aucune
+    donnée fournie" (déjà géré par check_charts.py) qu'une correction basée
+    sur une source silencieusement incohérente."""
+    if not plan:
+        return dossier
+    for key in ("allocation_pct", "liquidite_pct"):
+        plan_val = plan.get(key)
+        dossier_val = dossier.get(key)
+        if dossier_val and plan_val and dossier_val != plan_val:
+            warnings.append(
+                f"⚠ {key} présent à la fois dans --dossier et --plan avec des valeurs "
+                f"différentes — ignoré des deux côtés pour cette correction automatique, "
+                f"à corriger en amont (source unique attendue)."
+            )
+            dossier.pop(key, None)
+        elif not dossier_val and plan_val:
+            dossier[key] = plan_val
+    return dossier
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("src")
@@ -93,6 +132,10 @@ def main():
                           "cf. template_positions.json)")
     ap.add_argument("--dossier", required=True,
                      help="Fichier propre à CE client (nb_elements_reels + chiffres_source)")
+    ap.add_argument("--plan", default=None,
+                     help="Optionnel (v4.20) : plan.json déjà utilisé pour personalize_canvas.py. "
+                          "Si allocation_pct/liquidite_pct sont absents de --dossier, ils sont repris "
+                          "depuis --plan pour éviter la double saisie (cf. correctif v4.20 ci-dessus).")
     ap.add_argument("--tolerance", type=int, default=0)
     ap.add_argument("--fix-charts", action="store_true",
                      help="Corrige automatiquement les graphiques natifs (donuts) restés aux "
@@ -102,6 +145,11 @@ def main():
 
     template_positions = json.load(open(args.template_positions, encoding="utf-8"))
     dossier = json.load(open(args.dossier, encoding="utf-8"))
+    plan = json.load(open(args.plan, encoding="utf-8")) if args.plan else None
+    allocation_warnings = []
+    dossier = merge_allocation_sources(dossier, plan, allocation_warnings)
+    for w in allocation_warnings:
+        print(w)
 
     # CORRECTIF (bug C, crash-test #3 27/08/2026 — toujours présent avant ce
     # correctif, confirmé en direct le 29/08/2026 lors du crash-test à deux

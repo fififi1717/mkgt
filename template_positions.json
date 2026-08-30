@@ -14,9 +14,10 @@
     14,
     15,
     16,
+    17,
     18
   ],
-  "_note_slides_personnalisees": "Liste fixe des slides Canvas Master remplies à chaque dossier (identique pour tous les clients). Exclut 2/3/6/11/17/19 (structurelles ou fixes) et toutes les slides bibliothèque insérées (R8, copiées telles quelles — jamais personnalisées, jamais contrôlées).",
+  "_note_slides_personnalisees": "Liste fixe des slides Canvas Master remplies à chaque dossier (identique pour tous les clients). Exclut 2/3/6/11/19 (structurelles ou fixes) et toutes les slides bibliothèque insérées (R8, copiées telles quelles — jamais personnalisées, jamais contrôlées). CORRECTIF v4.20 (30/08/2026, crash-test double client) : la slide 17 (Accompagnement, bloc « Engagements spécifiques à ce dossier », 6 placeholders : 3x [Engagement N] + 3x [Détail...]) manquait de cette liste depuis l'introduction de personalize_canvas.py (v4.19) — elle sortait donc TOUJOURS avec les placeholders visibles, sur tous les dossiers, sans qu'aucun contrôle (validate.py, check_montants, check_template_residue) ne le détecte comme anormal puisque '[Engagement 1]' est un placeholder valide non reconnu comme marqueur de workflow. Ajoutée ici ; cf. clé \"17\" dans personalize_canvas.py --plan pour l'ordre exact des 6 valeurs attendues.",
   "slots_variables": {
     "12": {
       "description": "Vos projets — jusqu'à 3 colonnes objectif",
@@ -53,19 +54,9 @@
         3990784,
         4060784,
         4400784
-      ]
-    },
-    "8": {
-      "description": "Succession — lignes héritiers (Enfant 1/2/3), même Y sur les 2 cartes 1er/2e décès",
-      "axe": "y",
-      "positions": [
-        3493008,
-        3749040,
-        4005072
       ],
-      "max_slots": 3,
-      "_note": "Ajouté 27/08/2026 : le Canvas Master ne supportait que 2 héritiers (aucun 3e emplacement dans le XML) ; corrigé par ajout d'une 3e ligne 'Enfant 3' sur les deux cartes 1er/2e décès (même grille Y, donc une seule liste de positions suffit — remove_unused_slots.py matche par Y seul, ce qui couvre les 2 cartes en un passage), avec repositionnement du Conjoint à y=4261104 (hors de cette liste, jamais supprimé). ⚠ Comme pour 12/13/15 : pas de reflow. Si nb_reel < 3, le Conjoint reste à sa position décalée -> un espace vide apparaît entre le dernier héritier et Conjoint. Limitation connue et acceptée (identique à celle déjà documentée pour 12/13/15), pas une régression. Au-delà de 3 héritiers, la limite dure persiste : regrouper deux héritiers dans un seul repère (cf. skill §GESTION DES CAS LIMITES)."
+      "_avertissement_v4_20": "CONSTAT CRASH-TEST 30/08/2026 : ces offsets 'solution_slot_2_y' ne correspondent à AUCUNE forme réelle du Cans_Mstr.pptx actuel (vérifié par inspection XML directe — la slide 15 n'a plus qu'UN SEUL emplacement solution par axe depuis une refonte non documentée dans ce fichier). remove_solution_slot.py tourne donc actuellement en no-op silencieux (0 forme supprimée, aucune erreur) sur tout dossier qui l'appelle — testé sur 2 dossiers fictifs, confirmé les deux fois. Ne pas supposer que cette fonctionnalité est active tant que ces offsets n'ont pas été revérifiés/régénérés sur le Canvas en production. cf. avertissement ajouté dans remove_solution_slot.py lui-même (v4.20)."
     }
   },
-  "_note_slots_variables": "Ces coordonnées ne changent JAMAIS d'un client à l'autre — seul le nombre de slots réellement utilisés varie (cf. fichier par dossier). Slide 8 (succession) : corrigée le 27/08/2026, passe de 2 à 3 emplacements héritier max (cf. slots_variables['8']) — la limite dure existe toujours au-delà de 3. | slide 15 : 'solution_slot_2_y' liste les offsets Y des formes de l'emplacement solution n°2 (filet fin + nom de solution + profil de risque). Utilisé uniquement par remove_solution_slot.py, en intersection avec l'offset X de la colonne concernée."
+  "_note_slots_variables": "Ces coordonnées ne changent JAMAIS d'un client à l'autre — seul le nombre de slots réellement utilisés varie (cf. fichier par dossier). CORRECTIF v4.20 (30/08/2026, crash-test double client) : l'entrée slide 8 (succession) a été RETIRÉE — elle décrivait encore 3 lignes 'Enfant 1/2/3' individuelles, alors que le Cans_Mstr.pptx en production utilise déjà le format résolu 'Par enfant (×N)' à une seule ligne (confirmé par inspection XML directe le 30/08/2026 : les 3 offsets Y documentés correspondent en réalité aux lignes 'Par enfant (×N)' / 'Conjoint' / 'Capitaux décès', pas à 3 enfants). Utiliser nb_elements_reels['8'] avec l'ancienne définition aurait supprimé la ligne 'Capitaux décès' au lieu d'un enfant excédentaire — corruption silencieuse. Aucune action requise pour la slide 8 quel que soit le nombre d'enfants (résolu v4.14/15, confirmé). | slide 15 : 'solution_slot_2_y' — cf. AVERTISSEMENT ci-dessous, cette clé ne correspond plus à aucune forme réelle du Canvas actuel."
 }

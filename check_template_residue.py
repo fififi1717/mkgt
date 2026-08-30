@@ -60,6 +60,28 @@ NS = {
 
 PLACEHOLDER_COLOR = "C4B5A5"  # couleur de saisie du template Canvas Master, jamais destinée au rendu final
 
+# CORRECTIF v4.20 (30/08/2026, crash-test double client) : R16 (corrigée v4.19,
+# confirmée par Marc) précise explicitement que C4B5A5 N'EST PAS entièrement
+# une couleur de placeholder — elle coexiste comme couleur de hiérarchie
+# volontaire sur la slide "Synthèse de la stratégie" (cf. SKILL.md, note R16 :
+# "coexiste avec le bronze fort... cf. slide 15 où il reste présent
+# volontairement"). Ce script n'avait jamais été mis à jour après cette
+# correction et flaguait donc un FAUX POSITIF systématique sur cette slide à
+# chaque dossier généré — confirmé en crash-test le 30/08/2026 : QA visuelle
+# réelle (rendu image) montre un texte parfaitement lisible (contraste correct
+# sur les cartes pleines et sur fond crème), pas un résidu "beige sur beige".
+# Détection PAR CONTENU plutôt que par numéro de slide : les numéros de
+# fichier internes ne correspondent PAS de façon stable à la position
+# narrative après assemblage (constaté en crash-test — le contenu "Synthèse"
+# peut se retrouver dans un fichier slideN.xml dont N ne correspond ni à sa
+# position Canvas Master d'origine (15) ni à son folio affiché). Le repère
+# fixe "STRATÉGIE · SYNTHÈSE" (eyebrow de section, identique pour tous les
+# clients, jamais traduit ni personnalisé) est présent sur ce fichier quel
+# que soit son nom — c'est un ancrage robuste.
+SLIDES_INTENTIONAL_C4B5A5_MARKERS = [
+    "STRATÉGIE · SYNTHÈSE",
+]
+
 # Marqueurs de workflow légitimes (§2.0, §GESTION DES CAS LIMITES du skill) —
 # jamais traités comme un résidu, seulement listés à part en --show-pending.
 WORKFLOW_MARKERS = ("À compléter", "MANQUANT")
@@ -90,7 +112,13 @@ def iter_slide_xml(pptx_path):
 
 
 def check_placeholder_color(slide_num, xml, report):
-    """R16 — cherche des runs de texte non vide encore en couleur C4B5A5."""
+    """R16 — cherche des runs de texte non vide encore en couleur C4B5A5.
+
+    CORRECTIF v4.20 : ignore les slides portant un marqueur de contenu connu
+    où C4B5A5 est une couleur de hiérarchie volontaire (cf. constante
+    SLIDES_INTENTIONAL_C4B5A5_MARKERS ci-dessus et R16 du skill)."""
+    if any(marker in xml for marker in SLIDES_INTENTIONAL_C4B5A5_MARKERS):
+        return
     for m in re.finditer(
         r'<a:rPr[^>]*>.*?<a:solidFill><a:srgbClr val="' + PLACEHOLDER_COLOR + r'"/>.*?</a:rPr>\s*<a:t>([^<]*)</a:t>',
         xml, re.DOTALL,

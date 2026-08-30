@@ -20,7 +20,7 @@ plan.json attend (toutes les clés optionnelles sauf 'replacements') :
   "mois_annee": "AOÛT 2026",
   "replacements": {"1": [...], "4": [...], "7": [...], "8": [...], "9": [...],
                     "10": [...], "12": [...], "13": [...], "14": [...],
-                    "15": [...], "16": [...], "18": [...]},
+                    "15": [...], "16": [...], "17": [...], "18": [...]},
   "allocation_pct": {"Immobilier": 64.0, "Financier": 26.0, "Retraite": 6.4, "Liquidités": 3.6},
   "liquidite_pct": {"Liquide": 36.0, "Illiquide": 64.0},
   "patrimoine": {
@@ -32,6 +32,21 @@ plan.json attend (toutes les clés optionnelles sauf 'replacements') :
 
 Les valeurs de 'replacements' sont produites par content_plans.build_plan()
 à partir des données structurées du dossier client (cf. content_plans.py).
+
+CORRECTIF v4.20 (30/08/2026, crash-test double client) : la clé "17" (slide
+Accompagnement, bloc "Engagements spécifiques à ce dossier") était absente
+de ce docstring et de template_positions.json["slides_personnalisees"] —
+elle sortait donc TOUJOURS avec les 6 placeholders visibles, sur tous les
+dossiers générés jusqu'ici, sans qu'aucun script ne le signale comme un
+défaut (le format "[Engagement 1]" n'est pas reconnu comme incomplet par
+check_template_residue.py, cf. correctif séparé dans ce script). Attend
+exactement 6 valeurs, dans cet ordre (vérifié par inspection XML directe
+du Cans_Mstr.pptx en production) :
+  [0] Intitulé engagement 1   [1] Détail engagement 1 (comment/fréquence/interlocuteur)
+  [2] Intitulé engagement 2   [3] Détail engagement 2
+  [4] Intitulé engagement 3   [5] Détail engagement 3
+Cette section est éditoriale (ton, fréquence de suivi) — pas de montant
+attendu, donc sans impact sur check_montants.py.
 La clé "5" (Votre patrimoine) ne doit JAMAIS être fournie dans 'replacements' :
 cette slide est reconstruite nativement via 'patrimoine', pas remplie par
 substitution de texte (cf. rebuild_slide5_patrimoine).
