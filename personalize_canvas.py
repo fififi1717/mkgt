@@ -14,6 +14,7 @@ en évidence plusieurs bugs récurrents de ce remplissage manuel :
 
 Usage :
     python3 personalize_canvas.py --canvas Cans_Mstr.pptx --plan plan.json --out Cans_Mstr_perso.pptx
+    python3 personalize_canvas.py --canvas Cans_Mstr.pptx --show-fields 7   # aperçu de l'ordre des champs, sans remplir
 
 plan.json attend (toutes les clés optionnelles sauf 'replacements') :
 {
@@ -327,6 +328,164 @@ def add_bareme_bar(prs, tmi_label):
 # 3) Orchestration
 # ---------------------------------------------------------------------------
 
+def _slide_order_by_rid(pptx_path):
+    """Retourne la liste des noms de fichier slideN.xml dans l'ordre physique
+    réel (celui de <p:sldIdLst> dans presentation.xml), en résolvant chaque
+    r:id via presentation.xml.rels. Fonctionne sur un .pptx classique (pas
+    un dossier extrait) — utilisé avant ET après le passage python-pptx pour
+    comparer les deux états."""
+    with zipfile.ZipFile(pptx_path) as z:
+        pres_xml = z.read("ppt/presentation.xml").decode("utf-8")
+        rels_xml = z.read("ppt/_rels/presentation.xml.rels").decode("utf-8")
+
+    rid_to_target = dict(re.findall(
+        r'Id="(rId\d+)"[^>]*Target="slides/([^"]+)"', rels_xml))
+    ordered_rids = re.findall(r'<p:sldId[^>]*r:id="(rId\d+)"', pres_xml)
+    return [rid_to_target[r] for r in ordered_rids if r in rid_to_target]
+
+
+def restore_slide_filenames(pptx_path, expected_order):
+    """CORRECTIF 31/08/2026 (crash-test consultant, dossier réel) — bug
+    critique : toute sauvegarde python-pptx (`Presentation(...).save(...)`)
+    renumérote les fichiers ppt/slides/slideN.xml selon leur POSITION
+    physique (1..N sans trous), quel que soit leur nom avant l'ouverture.
+    `template_positions.json`, `nb_elements_reels` et le routage couleur de
+    ce script identifient pourtant les slides par leur nom de fichier
+    D'ORIGINE (12=Projets, 13=Moyens, 15=Synthèse...) — jamais par position.
+    Conséquence observée en test réel : après la reconstruction native de la
+    slide 5 (patrimoine) et/ou de la barre de barème de la slide 7 (qui
+    imposent un aller-retour python-pptx), `remove_unused_slots.py` ciblait
+    la mauvaise slide et ne supprimait rien (slot factice resté visible dans
+    le deck livré au client).
+
+    Cette fonction compare l'ordre `expected_order` (noms de fichier corrects,
+    capturés AVANT l'ouverture python-pptx) à l'ordre réel après sauvegarde,
+    et renomme chaque partie (slideN.xml, son _rels, les cibles dans
+    presentation.xml.rels et [Content_Types].xml, et les .rels des
+    notesSlides qui référencent la slide) pour restaurer les noms d'origine.
+    Idempotent : si aucune renumérotation n'a eu lieu, ne modifie rien."""
+    tmp = pptx_path + ".__tmp_restore"
+    if os.path.exists(tmp):
+        shutil.rmtree(tmp)
+    os.makedirs(tmp)
+    with zipfile.ZipFile(pptx_path) as z:
+        z.extractall(tmp)
+
+    actual_order = _slide_order_by_rid(pptx_path)
+    if actual_order == expected_order:
+        shutil.rmtree(tmp)
+        return False  # rien à corriger
+
+    if len(actual_order) != len(expected_order):
+        shutil.rmtree(tmp)
+        raise ValueError(
+            f"restore_slide_filenames : nombre de slides incohérent "
+            f"({len(actual_order)} vs {len(expected_order)} attendues) — "
+            f"correction automatique impossible, à traiter manuellement."
+        )
+
+    # rename_map : nom ACTUEL (après save) -> nom ATTENDU (avant save),
+    # à la même position physique. On passe par un préfixe temporaire pour
+    # ne jamais écraser un fichier cible avant de l'avoir déplacé.
+    rename_map = dict(zip(actual_order, expected_order))
+    slides_dir = os.path.join(tmp, "ppt", "slides")
+    rels_dir = os.path.join(slides_dir, "_rels")
+
+    for actual in rename_map:
+        stem = actual.replace(".xml", "")
+        for p in (os.path.join(slides_dir, actual),
+                  os.path.join(rels_dir, f"{stem}.xml.rels")):
+            if os.path.exists(p):
+                os.rename(p, p + ".__tmp")
+    for actual, expected in rename_map.items():
+        stem = actual.replace(".xml", "")
+        new_stem = expected.replace(".xml", "")
+        p_xml = os.path.join(slides_dir, actual) + ".__tmp"
+        if os.path.exists(p_xml):
+            os.rename(p_xml, os.path.join(slides_dir, expected))
+        p_rels = os.path.join(rels_dir, f"{stem}.xml.rels") + ".__tmp"
+        if os.path.exists(p_rels):
+            os.rename(p_rels, os.path.join(rels_dir, f"{new_stem}.xml.rels"))
+
+    def _rewrite(path, mapping):
+        """Une seule passe via regex + callback : chaque correspondance est
+        résolue indépendamment contre le texte ORIGINAL, jamais contre le
+        résultat d'une substitution précédente — élimine tout risque de
+        cascade (ex. 10->11 puis 11->12 qui rattraperait le 10 fraîchement
+        converti). Bug réel trouvé le 31/08/2026 en testant cette fonction
+        elle-même sur une 2e édition du Canvas Master : des substitutions
+        successives naïves (str.replace en boucle) avaient fait converger
+        plusieurs rId vers le même fichier cible (slide19.xml en x6)."""
+        data = open(path, encoding="utf-8").read()
+        pattern = re.compile("|".join(re.escape(k) for k in mapping))
+        data = pattern.sub(lambda m: mapping[m.group(0)], data)
+        open(path, "w", encoding="utf-8").write(data)
+
+    slide_map = {f'Target="slides/{a}"': f'Target="slides/{e}"'
+                 for a, e in rename_map.items()}
+    _rewrite(os.path.join(tmp, "ppt", "_rels", "presentation.xml.rels"), slide_map)
+    ct_map = {f'/ppt/slides/{a}"': f'/ppt/slides/{e}"'
+              for a, e in rename_map.items()}
+    _rewrite(os.path.join(tmp, "[Content_Types].xml"), ct_map)
+
+    notes_rels_dir = os.path.join(tmp, "ppt", "notesSlides", "_rels")
+    if os.path.isdir(notes_rels_dir):
+        notes_map = {f'Target="../slides/{a}"': f'Target="../slides/{e}"'
+                     for a, e in rename_map.items()}
+        for fn in os.listdir(notes_rels_dir):
+            _rewrite(os.path.join(notes_rels_dir, fn), notes_map)
+
+    fixed = pptx_path + ".__tmp_fixed.pptx"
+    if os.path.exists(fixed):
+        os.remove(fixed)
+    with zipfile.ZipFile(fixed, "w", zipfile.ZIP_DEFLATED) as zf:
+        for root, _, files in os.walk(tmp):
+            for f in files:
+                full = os.path.join(root, f)
+                zf.write(full, os.path.relpath(full, tmp))
+    shutil.rmtree(tmp)
+    os.replace(fixed, pptx_path)
+    print(f"  ⚠ renumérotation python-pptx détectée et corrigée automatiquement "
+          f"({len(rename_map)} fichier(s) renommé(s))")
+    return True
+
+
+def show_fields(canvas_path, slide_num):
+    """CORRECTIF 31/08/2026 (crash-test consultant, dossier réel F.D./I.D.) —
+    3 champs de la slide 7 (RATIO D'ENDETTEMENT, MARGE AVANT TRANCHE SUP.,
+    REVENUS NETS MENSUELS) ont reçu des valeurs qui ne correspondaient pas à
+    leur libellé réel : le format `replacements` est une liste positionnelle
+    pure (l'ordre d'apparition dans le XML, invisible sans l'ouvrir), et rien
+    n'empêchait de deviner cet ordre au lieu de le vérifier.
+
+    Cette commande affiche, pour une slide donnée, la séquence exacte
+    attendue par `inject_slide()` — index, libellé le plus proche trouvé
+    juste avant chaque run à crochets, et texte du placeholder — à consulter
+    AVANT de préparer `replacements[slide_num]`, plutôt que de deviner
+    l'ordre. Ne modifie rien, ne nécessite pas de plan.json.
+    """
+    with zipfile.ZipFile(canvas_path) as z:
+        xml = z.read(f"ppt/slides/slide{slide_num}.xml").decode("utf-8")
+    xml_for_scan = xml.replace("[MOIS ANNÉE]", "X")
+
+    all_texts = list(re.finditer(r"<a:t>([^<]*)</a:t>", xml_for_scan))
+    bracket_positions = {m.start() for m in all_texts if "[" in m.group(1)}
+
+    print(f"\nSlide {slide_num} — {len(bracket_positions)} champ(s) attendu(s) dans "
+          f"cet ordre exact pour replacements[\"{slide_num}\"] :\n")
+    idx = 0
+    last_label = None
+    for m in all_texts:
+        text = m.group(1)
+        if m.start() in bracket_positions:
+            idx += 1
+            label = last_label if last_label else "(aucun libellé détecté avant ce champ)"
+            print(f"  [{idx}] libellé le plus proche : {label!r:55}  placeholder : {text!r}")
+        elif text.strip():
+            last_label = text.strip()
+    print()
+
+
 def personalize(canvas_in, plan, out_path):
     tmp_dir = out_path + ".__tmp_personalize"
     if os.path.exists(tmp_dir):
@@ -363,6 +522,10 @@ def personalize(canvas_in, plan, out_path):
                 zf.write(full, os.path.relpath(full, tmp_dir))
     shutil.rmtree(tmp_dir)
 
+    # Capturé AVANT toute ouverture python-pptx : c'est le SEUL moment où les
+    # noms de fichier sont garantis corrects (cf. restore_slide_filenames).
+    expected_order = _slide_order_by_rid(repacked)
+
     prs = Presentation(repacked)
     patrimoine = plan.get("patrimoine")
     if patrimoine:
@@ -375,14 +538,25 @@ def personalize(canvas_in, plan, out_path):
         add_bareme_bar(prs, tmi_label)
     prs.save(out_path)
     os.remove(repacked)
+    restore_slide_filenames(out_path, expected_order)
     print(f"OK -> {out_path}")
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--canvas", required=True)
-    ap.add_argument("--plan", required=True, help="fichier JSON, cf. docstring")
-    ap.add_argument("--out", required=True)
+    ap.add_argument("--plan", required=False, help="fichier JSON, cf. docstring "
+                    "(non requis avec --show-fields)")
+    ap.add_argument("--out", required=False)
+    ap.add_argument("--show-fields", metavar="SLIDE_NUM", default=None,
+                     help="n'écrit rien : affiche l'ordre exact des champs attendus "
+                          "pour cette slide (à consulter avant de préparer 'replacements', "
+                          "cf. bug de mapping constaté le 31/08/2026)")
     args = ap.parse_args()
+    if args.show_fields:
+        show_fields(args.canvas, args.show_fields)
+        raise SystemExit(0)
+    if not args.plan or not args.out:
+        raise SystemExit("--plan et --out sont requis (sauf en mode --show-fields)")
     plan_data = json.load(open(args.plan, encoding="utf-8"))
     personalize(args.canvas, plan_data, args.out)

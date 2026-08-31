@@ -126,8 +126,11 @@ def apply(src_pptx, dst_pptx, slide_slots):
 
 if __name__ == '__main__':
     if len(sys.argv) == 3:
-        # Test : slide 12, retirer la colonne 3 (x=5897880, cf. inspection XML)
-        apply(sys.argv[1], sys.argv[2], {12: {"x": [5897880]}})
+        # Test : slide 13 (Moyens), retirer la dernière ligne (y=3337560,
+        # cf. template_positions.json). Ancien exemple (slide 12, x=5897880)
+        # obsolète depuis la refonte en lignes horizontales du 01/09/2026 —
+        # slide 12 n'utilise plus l'axe X (colonnes) mais l'axe Y (groupé).
+        apply(sys.argv[1], sys.argv[2], {13: {"y": [3337560]}})
     elif len(sys.argv) == 2:
         # Mode select_slots.py d'origine : affiche les slots calculés sans les appliquer
         import json
