@@ -76,10 +76,15 @@ from pptx.enum.shapes import MSO_SHAPE
 # converti automatiquement ici.
 # ---------------------------------------------------------------------------
 COLOR_CORPS = "4A5568"
-COLOR_BRONZE_CLAIR = "8E5B3F"   # obsolète — toute occurrence migre vers le bronze fort
-COLOR_BRONZE_FORT = "7A3E1D"    # couleur bronze finale, remplace 8E5B3F partout
-PLACEHOLDER_COLORS_TO_MIGRATE = {COLOR_BRONZE_CLAIR}
-COLOR_BRONZE_TARGET = COLOR_BRONZE_FORT
+COLOR_BRONZE_CLAIR = "8E5B3F"   # couleur de saisie du Canvas, migre vers une des 2 couleurs finales ci-dessous
+COLOR_BRONZE_FORT = "7A3E1D"    # couleur finale par défaut (valeurs numériques / chiffres clés)
+COLOR_TAUPE = "524A44"          # couleur finale pour les slides à contenu narratif/descriptif
+PLACEHOLDER_COLORS_TO_MIGRATE = {COLOR_BRONZE_CLAIR, COLOR_BRONZE_FORT}
+# Slides narratives (texte descriptif, pas de chiffre clé) -> taupe. Toutes les autres -> bronze fort.
+TAUPE_SLIDES = {"4", "9", "12"}
+
+def color_for_slide(slide_num):
+    return COLOR_TAUPE if str(slide_num) in TAUPE_SLIDES else COLOR_BRONZE_FORT
 
 NAVY = RGBColor(0x1C, 0x2B, 0x3A)
 BORDEAUX = RGBColor(0x8B, 0x1A, 0x1A)
@@ -107,20 +112,20 @@ BAREME_2025 = [
 # 1) Remplissage texte par regex (placeholders [entre crochets])
 # ---------------------------------------------------------------------------
 
-def _replace_run_text(run_xml, new_text):
+def _replace_run_text(run_xml, new_text, target_color=COLOR_BRONZE_FORT):
     esc = new_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     run_xml = re.sub(r"(?<=<a:t>).*?(?=</a:t>)", lambda _m: esc, run_xml, flags=re.S)
     run_xml = re.sub(r'\si="1"', "", run_xml)  # R17 : romain une fois rempli
 
     def recolor(m):
         if m.group(1) in PLACEHOLDER_COLORS_TO_MIGRATE:
-            return f'<a:srgbClr val="{COLOR_BRONZE_TARGET}"/>'
+            return f'<a:srgbClr val="{target_color}"/>'
         return m.group(0)
 
     return re.sub(r'<a:srgbClr val="([0-9A-Fa-f]{6})"/>', recolor, run_xml)
 
 
-def inject_slide(xml, replacements, mois_annee):
+def inject_slide(xml, replacements, mois_annee, target_color=COLOR_BRONZE_FORT):
     xml = xml.replace("[MOIS ANNÉE]", mois_annee)
     runs = list(re.finditer(r"<a:r>(?:(?!</a:r>).)*</a:r>", xml, re.S))
     out, last_end, ri = [], 0, 0
@@ -130,7 +135,7 @@ def inject_slide(xml, replacements, mois_annee):
             if ri >= len(replacements):
                 raise ValueError(f"plan incomplet : pas assez de valeurs (attendu > {ri})")
             out.append(xml[last_end:m.start()])
-            out.append(_replace_run_text(run_xml, replacements[ri]))
+            out.append(_replace_run_text(run_xml, replacements[ri], target_color))
             ri += 1
             last_end = m.end()
     out.append(xml[last_end:])
@@ -318,7 +323,8 @@ def personalize(canvas_in, plan, out_path):
     for slide_num, values in replacements.items():
         path = os.path.join(tmp_dir, "ppt", "slides", f"slide{slide_num}.xml")
         xml = open(path, encoding="utf-8").read()
-        open(path, "w", encoding="utf-8").write(inject_slide(xml, values, mois_annee))
+        target_color = color_for_slide(slide_num)
+        open(path, "w", encoding="utf-8").write(inject_slide(xml, values, mois_annee, target_color))
 
     path6 = os.path.join(tmp_dir, "ppt", "slides", "slide6.xml")
     xml6 = open(path6, encoding="utf-8").read().replace("[MOIS ANNÉE]", mois_annee)

@@ -17,10 +17,10 @@ client_spec.json attend :
   "bibliotheque": "mkgt/Bibe_Def.pptx",
   "index": "mkgt/index.json",
   "slides_bibliotheque": [5, 6, 25, 26, 27, 28, 33, 34, 7, 29, 35, 38, 48, 51, 52],
-  "exclude_canvas": [19],
-  "_note_exclude_canvas": "Optionnel (ajouté v4.12). Liste de numéros de slides Canvas Master (1-19) à exclure de "
+  "exclude_canvas": [17],  # position physique, cf. renumérotation 31/08/2026
+  "_note_exclude_canvas": "Optionnel (ajouté v4.12, renuméroté 31/08/2026). Liste de POSITIONS physiques Canvas Master (1-17) à exclure de "
                           "l'assemblage, typiquement pour éviter un doublon avec une slide bibliothèque équivalente "
-                          "(ex. slide bibliothèque 49 'Barème succession' rend la Canvas 19 'Annexe barème détaillé' "
+                          "(ex. slide bibliothèque 49 'Barème succession' rend la Canvas 17 'Annexe barème détaillé' "
                           "redondante — cf. index.json, règle systématique 'slide_49_incluse'). Ne PAS utiliser pour "
                           "retirer une slide narrative structurante (audit, diagnostic, stratégie, impact, synthèse) : "
                           "R7 du skill interdit toujours la suppression arbitraire d'une slide Canvas Master par le "
@@ -173,28 +173,35 @@ def insert_library_slides(tmp_dir, biblio_tmp_dir, positions):
 # 2. Réordonnancement narratif (§5.2ter) — appliqué depuis index.json,
 #    plus jamais laissé à une ré-interprétation manuelle par session.
 # ---------------------------------------------------------------------------
-CANVAS_ORDER_BLOCK_A = list(range(1, 13))       # 1-12 : audit + diagnostic + projets
-CANVAS_MOYENS = 13
-CANVAS_SYNTHESE = 15
-CANVAS_IMPACT = 14
-CANVAS_AVANT_APRES = 16
-CANVAS_ACCOMPAGNEMENT = 17
-CANVAS_PROCHAINES_ETAPES = 18
-CANVAS_ANNEXE_BAREME = 19
+# Renumérotées (session du 31/08/2026) après suppression définitive des slides
+# Canvas "Diagnostic" et "Impact" (doublon avec "Avant/Après", cf. SKILL.md) :
+# le Canvas Master est passé de 19 à 17 slides physiques. Ces constantes sont
+# des POSITIONS PHYSIQUES CONTIGUËS (1..17) dans le fichier, pas des anciens
+# numéros de slide — ne jamais les confondre avec les noms de fichier
+# slideN.xml (ceux-ci n'ont pas été renommés, seuls 10 et 14 ont disparu).
+CANVAS_ORDER_BLOCK_A = list(range(1, 12))       # 1-11 : audit + projets (diagnostic supprimé)
+CANVAS_MOYENS = 12
+CANVAS_SYNTHESE = 13
+CANVAS_AVANT_APRES = 14
+CANVAS_ACCOMPAGNEMENT = 15
+CANVAS_PROCHAINES_ETAPES = 16
+CANVAS_ANNEXE_BAREME = 17
+# CANVAS_IMPACT supprimée (ex-position 14) : la slide Impact n'existe plus,
+# doublon de "Avant/Après" retiré définitivement du Canvas Master.
 
 
 def reorder_narratif(tmp_dir, canvas_slide_count, inserted, index_data, exclude_canvas=None):
     """Réordonne <p:sldId> selon §5.2ter. Les positions Canvas 1..canvas_slide_count
     sont les N premiers <p:sldId> d'origine (ordre physique source, inchangé pour
     elles) ; les slides insérées (inserted, dans l'ordre de la sélection Étape 3)
-    sont réparties en 2 groupes : pédagogique/conviction (juste après Impact) et
+    sont réparties en 2 groupes : pédagogique/conviction (juste après Synthèse, depuis la suppression de la slide Impact le 31/08/2026) et
     tarification/annexes (juste avant l'annexe barème).
 
     exclude_canvas (ajouté v4.12) : ensemble optionnel de numéros de slides Canvas
-    Master (1-19) à omettre du réordonnancement final — la slide reste physiquement
+    Master (1-17) à omettre du réordonnancement final — la slide reste physiquement
     présente à ce stade (retirée ensuite par cleanup_excluded_canvas_slides), on ne
     fait ici que ne pas l'inclure dans la liste ordonnée. Sert à l'anti-doublon
-    bibliothèque/Canvas (ex. slide 49 vs Canvas 19), jamais à une suppression libre
+    bibliothèque/Canvas (ex. slide 49 vs Canvas 17), jamais à une suppression libre
     d'une slide narrative structurante (R7 du skill)."""
     exclude_canvas = exclude_canvas or set()
     pres_path = os.path.join(tmp_dir, "ppt", "presentation.xml")
@@ -205,7 +212,7 @@ def reorder_narratif(tmp_dir, canvas_slide_count, inserted, index_data, exclude_
     if len(all_entries) != canvas_slide_count + len(inserted):
         die("incohérence : nombre d'entrées sldIdLst != canvas + bibliothèque insérées")
 
-    canvas_entries = all_entries[:canvas_slide_count]   # positions 1..19, ordre physique = ordre logique 1-19 ici
+    canvas_entries = all_entries[:canvas_slide_count]   # positions 1..17, ordre physique = ordre logique 1-17 ici
     lib_entries = all_entries[canvas_slide_count:]       # dans l'ordre où insert_library_slides les a ajoutées
 
     lib_by_pos = {e["pos"]: entry for e, entry in zip(inserted, lib_entries)}
@@ -237,7 +244,6 @@ def reorder_narratif(tmp_dir, canvas_slide_count, inserted, index_data, exclude_
     ordered += [canvas(n) for n in CANVAS_ORDER_BLOCK_A if n not in exclude_canvas]
     ordered += canvas_if_kept(CANVAS_MOYENS)
     ordered += canvas_if_kept(CANVAS_SYNTHESE)
-    ordered += canvas_if_kept(CANVAS_IMPACT)
     ordered += pedago_conviction
     ordered += canvas_if_kept(CANVAS_AVANT_APRES)
     ordered += canvas_if_kept(CANVAS_ACCOMPAGNEMENT)

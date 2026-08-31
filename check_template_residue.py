@@ -60,6 +60,18 @@ NS = {
 
 PLACEHOLDER_COLOR = "C4B5A5"  # couleur de saisie du template Canvas Master, jamais destinée au rendu final
 
+# CORRECTIF 31/08/2026 : ce script ne vérifiait jamais la couleur de saisie
+# bronze clair (8E5B3F), alors même que R16/le SKILL documentaient ce contrôle
+# comme "disponible" ici depuis la migration bronze clair -> bronze fort/taupe
+# du 30-31/08/2026 (personalize_canvas.py, COLOR_BRONZE_FORT/COLOR_TAUPE). Un
+# run encore en 8E5B3F dans un dossier généré signale soit un placeholder
+# jamais rempli (workflow incomplet), soit un plan de remplacement mal aligné
+# (cf. ValueError de personalize_canvas.py en cas de décompte incorrect) —
+# dans les deux cas un vrai défaut, jamais une couleur de hiérarchie
+# volontaire (contrairement à C4B5A5 sur la slide 15, cf. ci-dessus) : aucune
+# exception par marqueur de contenu n'est nécessaire ici.
+PLACEHOLDER_COLOR_BRONZE = "8E5B3F"
+
 # CORRECTIF v4.20 (30/08/2026, crash-test double client) : R16 (corrigée v4.19,
 # confirmée par Marc) précise explicitement que C4B5A5 N'EST PAS entièrement
 # une couleur de placeholder — elle coexiste comme couleur de hiérarchie
@@ -132,6 +144,25 @@ def check_placeholder_color(slide_num, xml, report):
             report["color_residue"].append((slide_num, text))
 
 
+def check_bronze_residue(slide_num, xml, report):
+    """Ajouté 31/08/2026 — cherche des runs de texte non vide encore en
+    couleur de saisie bronze clair (8E5B3F), jamais recolorés en bronze fort
+    ou en taupe par personalize_canvas.py. Contrairement à C4B5A5, cette
+    couleur n'a aucun usage de hiérarchie volontaire connu à ce jour — pas
+    d'exception par marqueur de contenu."""
+    for m in re.finditer(
+        r'<a:rPr[^>]*>.*?<a:solidFill><a:srgbClr val="' + PLACEHOLDER_COLOR_BRONZE + r'"/>.*?</a:rPr>\s*<a:t>([^<]*)</a:t>',
+        xml, re.DOTALL,
+    ):
+        text = m.group(1).strip()
+        if not text:
+            continue
+        if any(marker in text for marker in WORKFLOW_MARKERS):
+            report["pending"].append((slide_num, text))
+        else:
+            report["bronze_residue"].append((slide_num, text))
+
+
 def check_internal_phrases(slide_num, xml, report):
     """R15 — cherche les phrases de conception interne connues."""
     texts = re.findall(r"<a:t>([^<]*)</a:t>", xml)
@@ -159,14 +190,15 @@ def main():
                           "masqués par défaut car déjà tracés en Étape 4, pas un défaut à corriger")
     args = ap.parse_args()
 
-    report = {"color_residue": [], "internal_phrase": [], "unfilled": [], "pending": []}
+    report = {"color_residue": [], "bronze_residue": [], "internal_phrase": [], "unfilled": [], "pending": []}
 
     for slide_num, xml in iter_slide_xml(args.pptx):
         check_placeholder_color(slide_num, xml, report)
+        check_bronze_residue(slide_num, xml, report)
         check_internal_phrases(slide_num, xml, report)
         check_unfilled_placeholders(slide_num, xml, report)
 
-    total_issues = len(report["color_residue"]) + len(report["internal_phrase"])
+    total_issues = len(report["color_residue"]) + len(report["bronze_residue"]) + len(report["internal_phrase"])
 
     print("=== Contrôle des résidus de template (non bloquant, lecture seule) ===")
     print("ℹ Le contrôle des graphiques natifs (R14) est délégué à check_charts.py "
@@ -180,6 +212,15 @@ def main():
         print()
     else:
         print(f"✓ Aucun texte rempli encore en couleur placeholder ({PLACEHOLDER_COLOR}).\n")
+
+    if report["bronze_residue"]:
+        print(f"⚠ {len(report['bronze_residue'])} run(s) en couleur de saisie bronze clair ({PLACEHOLDER_COLOR_BRONZE}) "
+              f"jamais recolorés (bronze fort/taupe) :")
+        for slide_num, text in report["bronze_residue"]:
+            print(f"   slide{slide_num}: \"{text[:70]}\"")
+        print()
+    else:
+        print(f"✓ Aucun texte rempli encore en couleur de saisie bronze clair ({PLACEHOLDER_COLOR_BRONZE}).\n")
 
     if report["internal_phrase"]:
         print(f"⚠ {len(report['internal_phrase'])} note(s) de conception interne visible(s) (R15) :")
