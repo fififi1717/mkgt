@@ -50,6 +50,27 @@ attendu, donc sans impact sur check_montants.py.
 La clé "5" (Votre patrimoine) ne doit JAMAIS être fournie dans 'replacements' :
 cette slide est reconstruite nativement via 'patrimoine', pas remplie par
 substitution de texte (cf. rebuild_slide5_patrimoine).
+
+CORRECTIF 01/09/2026 (reconstruction Canvas — retour consultant "cases jamais
+voulues" + "ligne horizontale jamais implémentée") : le Cans_Mstr.pptx binaire
+avait pris du retard sur deux décisions déjà actées dans le skill. Corrigé
+en binaire ce jour ; les clés "4" et "12" changent de format :
+
+  "4" (Situation) — ATTEND DÉSORMAIS EXACTEMENT 6 VALEURS, une phrase complète
+  reformulée par puce (ex. "Vous avez 58 et 55 ans, mariés sous le régime de
+  la communauté réduite aux acquêts.") — jamais un format libellé/valeur.
+  Remplace l'ancien format à 8 valeurs (champs séparés). Si le dossier a moins
+  de 6 items réels, remplir les puces excédentaires avec un texte de
+  comblement (même logique que slides 12/13/15 : filler puis retrait par
+  remove_unused_slots.py via nb_elements_reels["4"], jamais de puce vide
+  laissée dans le livrable). Accords de genre obligatoires (Monsieur/Madame).
+
+  "12" (Projets) — toujours 6 valeurs, mais le sens des 2 valeurs par ligne
+  change : [0]=mot-clé court (1-3 mots, ex. "Transmission") [1]=phrase à la
+  1ère personne. Remplace l'ancien sens [intitulé, description longue].
+  Structurellement identique à avant (aucun changement de code nécessaire
+  ici) — seul template_positions.json changent (format "groupé" par ligne :
+  mot-clé + phrase + filet, cf. remove_unused_slots.py).
 """
 import argparse
 import json

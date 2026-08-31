@@ -54,8 +54,22 @@ def compute_slots_a_supprimer(template_positions: dict, nb_elements_reels: dict)
                 f"cf. limite dure documentée (comme slide 8 / 3 enfants)."
             )
         a_supprimer = positions[nb_reel:]
-        if a_supprimer:
-            result[slide_n] = {conf["axe"]: a_supprimer}
+        # CORRECTIF 01/09/2026 (support "slot groupé", cf. slide 4 et slide 12
+        # depuis leur refonte en lignes horizontales / puces) : un slot peut être
+        # soit un offset unique (int, ancien format colonnes/lignes simples,
+        # ex. slide 13/15), soit une LISTE de plusieurs offsets appartenant au
+        # même slot logique (ex. slide 12 : mot-clé + phrase + filet, à des Y
+        # différents ; slide 4 : barre+texte + filet précédent). On aplatit ici
+        # avant de renvoyer, pour que remove_shapes_at_offset() n'ait jamais à
+        # savoir si le slide utilise un format simple ou groupé.
+        flat = []
+        for item in a_supprimer:
+            if isinstance(item, list):
+                flat.extend(item)
+            else:
+                flat.append(item)
+        if flat:
+            result[slide_n] = {conf["axe"]: flat}
     return result
 
 def remove_shapes_at_offset(xml: str, x_values: set = None, y_values: set = None) -> tuple[str, int]:
