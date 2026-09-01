@@ -175,15 +175,24 @@ def main():
         step1 = str(Path(tmp) / "step1_slots.pptx")
         step2 = str(Path(tmp) / "step2_shrink.pptx")
 
-        print("=== [1/4] Suppression des slots vides (5.2quater) ===")
+        print("=== [1/5] Suppression des slots vides (5.2quater) ===")
         if slots:
             remove_unused_slots.apply(args.src, step1, slots)
         else:
             shutil.copy(args.src, step1)
             print("Aucun slot déclaré à supprimer — étape ignorée.")
 
-        print("\n=== [2/4] Réduction des zones en débordement ===")
-        report_shrink = shrink_oversized_text.apply(step1, step2, slides_check)
+        print("\n=== [2/5] Centrage vertical dynamique — slide 12 Vos projets (ajouté 01/09/2026) ===")
+        step1b = str(Path(tmp) / "step1b_center12.pptx")
+        nb_objectifs = dossier.get("nb_elements_reels", {}).get("12", 3)
+        try:
+            remove_unused_slots.apply_center_slide12(step1, step1b, nb_objectifs)
+        except ValueError as e:
+            print(f"⚠ Centrage slide 12 ignoré ({e}) — fichier laissé inchangé.")
+            shutil.copy(step1, step1b)
+
+        print("\n=== [3/5] Réduction des zones en débordement ===")
+        report_shrink = shrink_oversized_text.apply(step1b, step2, slides_check)
 
         # CORRECTIF (constat critique 29/08/2026) : le contrôle de traçabilité
         # des montants (étape [4/4] ci-dessous) tourne maintenant sur `step2`
@@ -204,7 +213,7 @@ def main():
         # sement identiques avant/après — faire le contrôle sur step2 (noms de
         # fichiers encore fiables) élimine le problème sans toucher à la
         # logique de check_montants elle-même.
-        print("\n=== [3/4] Contrôle de traçabilité des montants (non bloquant) ===")
+        print("\n=== [4/5] Contrôle de traçabilité des montants (non bloquant) ===")
         allowed_slides = {f"ppt/slides/slide{n}.xml" for n in slides_check}
         found = [
             (s, r, v)
@@ -233,7 +242,7 @@ def main():
         # ci-dessus) puisque cette étape est la seule à faire un aller-retour
         # python-pptx susceptible de renuméroter les fichiers slideN.xml.
         step3 = str(Path(tmp) / "step3_charts.pptx")
-        print("\n=== [4/4] Contrôle des graphiques natifs (donuts, non bloquant) ===")
+        print("\n=== [5/5] Contrôle des graphiques natifs (donuts, non bloquant) ===")
         chart_alerts, chart_fixes = check_charts.check(step2, dossier)
         chart_fixed_slides = set()
         if chart_alerts:

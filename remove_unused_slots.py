@@ -124,6 +124,102 @@ def apply(src_pptx, dst_pptx, slide_slots):
     zout.close()
     print(f'OK -> {dst_pptx}')
 
+
+# ---------------------------------------------------------------------------
+# Centrage dynamique — slide 12 "Vos projets" (AJOUTÉ 01/09/2026, retour Marc
+# en crash-test, proposition A retenue parmi 3 maquettes). FUSIONNÉ ici
+# plutôt que dans un script séparé (center_projets12.py, existé brièvement
+# le temps de la mise au point) — même logique de nettoyage de dépôt que la
+# fusion select_slots.py du 28/08/2026 : une seule responsabilité ("gérer les
+# lignes de la slide 12 selon nb_elements_reels"), un seul fichier.
+#
+# Comportement : à 3 objectifs, AUCUN changement (déjà calé pleine hauteur,
+# ne déborde pas). À 1 ou 2 objectifs, le(s) objectif(s) restant(s) sont
+# centrés verticalement comme un bloc (espace haut/bas égal, RIEN entre eux)
+# — et le filet séparateur entre rangées est SUPPRIMÉ (pas déplacé) pour ces
+# cas, conformément à la consigne "pas de trait" : un trait entre 2 objectifs
+# centrés avec du vide de chaque côté n'aurait plus de rôle de séparation de
+# tableau, seulement décoratif et non désiré.
+# ---------------------------------------------------------------------------
+TOP_PROJETS = 1371600
+BOTTOM_PROJETS = 4600000  # marge de sécurité avant le filet de pied de page (4773168)
+ENVELOPE_PROJETS = BOTTOM_PROJETS - TOP_PROJETS
+ROW_HEIGHT_PROJETS = 570000       # bloc mot-clé + phrase d'une rangée (budget template)
+DELTA_PHRASE_PROJETS = 220000     # offset phrase par rapport au mot-clé, fixe
+
+# Positions Y d'origine dans le Canvas Master, par rangée affichée (1-indexé) —
+# après compute_slots_a_supprimer, les N premières rangées survivent toujours
+# à CES positions d'origine (jamais renumérotées par ce script).
+ORIGIN_ROWS_PROJETS = {
+    1: {"filet": None, "motcle": 1371600, "phrase": 1591600},
+    2: {"filet": 2171600, "motcle": 2271600, "phrase": 2491600},
+    3: {"filet": 3071600, "motcle": 3171600, "phrase": 3391600},
+}
+
+
+def _move_shape_at_offset(xml, old_y, new_y, tolerance=TOLERANCE_EMU):
+    """Déplace (contrairement à remove_shapes_at_offset qui supprime) la forme
+    dont le <a:off> a un y à ±tolerance de old_y. Ne touche jamais x. Lève si
+    0 ou >1 correspondance (sécurité — même esprit que le reste du fichier)."""
+    pattern = re.compile(r'(<a:off x="\d+" y=")(\d+)("/>)')
+    matches = [m for m in pattern.finditer(xml) if abs(int(m.group(2)) - old_y) <= tolerance]
+    if len(matches) != 1:
+        raise ValueError(f"attendu exactement 1 forme à y≈{old_y}, trouvé {len(matches)}")
+    m = matches[0]
+    return xml[:m.start()] + m.group(1) + str(new_y) + m.group(3) + xml[m.end():]
+
+
+def _target_positions_projets(n):
+    """n rangées à afficher -> liste de {motcle, phrase} centrées dans
+    l'enveloppe, une bande égale par rangée."""
+    if n <= 0:
+        return []
+    band_h = ENVELOPE_PROJETS / n
+    targets = []
+    for i in range(n):
+        band_top = TOP_PROJETS + i * band_h
+        motcle_y = round(band_top + (band_h - ROW_HEIGHT_PROJETS) / 2)
+        targets.append({"motcle": motcle_y, "phrase": motcle_y + DELTA_PHRASE_PROJETS})
+    return targets
+
+
+def center_slide12_projets(xml, nb_objectifs):
+    if nb_objectifs >= 3 or nb_objectifs <= 0:
+        return xml, "aucun changement (3 objectifs ou 0 — comportement historique conservé)"
+    targets = _target_positions_projets(nb_objectifs)
+    moved, deleted = 0, 0
+    for i in range(1, nb_objectifs + 1):
+        origin, target = ORIGIN_ROWS_PROJETS[i], targets[i - 1]
+        if origin["filet"] is not None:
+            xml, n = remove_shapes_at_offset(xml, y_values={origin["filet"]})
+            deleted += n
+        for key in ("motcle", "phrase"):
+            if origin[key] != target[key]:
+                xml = _move_shape_at_offset(xml, origin[key], target[key])
+                moved += 1
+    return xml, f"{moved} forme(s) repositionnée(s), {deleted} filet(s) supprimé(s), pour {nb_objectifs} objectif(s)"
+
+
+def apply_center_slide12(src_pptx, dst_pptx, nb_objectifs):
+    """À appeler APRÈS apply() (suppression des rangées en trop) — édition
+    XML brute, jamais via python-pptx : aucun risque de renumérotation des
+    fichiers slideN.xml (cf. §5bis)."""
+    with zipfile.ZipFile(src_pptx) as z:
+        xml = z.read("ppt/slides/slide12.xml").decode("utf-8")
+    new_xml, status = center_slide12_projets(xml, nb_objectifs)
+    print(status)
+    tmp_out = dst_pptx + ".__tmp"
+    with zipfile.ZipFile(src_pptx) as zin, zipfile.ZipFile(tmp_out, "w", zipfile.ZIP_DEFLATED) as zout:
+        for item in zin.infolist():
+            data = zin.read(item.filename)
+            if item.filename == "ppt/slides/slide12.xml":
+                data = new_xml.encode("utf-8")
+            zout.writestr(item, data)
+    import os
+    os.replace(tmp_out, dst_pptx)
+    print(f"OK -> {dst_pptx}")
+
+
 if __name__ == '__main__':
     if len(sys.argv) == 3:
         # Test : slide 13 (Moyens), retirer la dernière ligne (y=3337560,

@@ -1,6 +1,6 @@
 {
   "_lisez_moi": "Positions XML des slots variables du Canvas Master. Communes à TOUS les clients — ne dépendent que de la version de Cans_Mstr.pptx, jamais d'un dossier particulier. À revérifier uniquement si le hash SHA256 de Cans_Mstr.pptx change (cf. mémoire de session, contrôle d'intégrité obligatoire en début de session). MAJ 27/08/2026 : hash mis à jour suite à l'édition de Cans_Mstr.pptx (slide 8, ajout d'un 3e emplacement héritier).",
-  "canvas_sha256": "cdcf6dfccbca9b7329ad32252da4b0b9f5326934c92311b6026e9daaad52efab",
+  "canvas_sha256": "3aa9aa42a044e70a702c7cd7ce182dc453f81f30aa852f6fefc847559da6bf52",
   "slides_personnalisees": [
     1,
     4,

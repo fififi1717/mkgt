@@ -117,6 +117,7 @@ GRIS_LABEL = RGBColor(0xA0, 0x90, 0x80)
 FILET = RGBColor(0xE5, 0xE0, 0xD8)
 FILET_FORT = RGBColor(0xCF, 0xC8, 0xBD)
 FONT_CORPS = "Calibri"
+FONT_TITRE = "Garamond"
 
 TMPL_ALLOC_CATS = ["Immobilier", "Financier", "Retraite", "Liquidités"]
 TMPL_LIQ_CATS = ["Liquide", "Illiquide"]
@@ -264,16 +265,32 @@ def rebuild_slide5_patrimoine(prs, familles, total_net):
     col_w = (usable - gap) // 2
     col_xs = [margin_left, margin_left + col_w + gap]
 
-    y = 1300000
     half = (len(familles) + 1) // 2
     cols = [familles[:half], familles[half:]]
+
+    # CORRECTIF 01/09/2026 (retour Marc, proposition A retenue) : le bloc
+    # démarrait toujours à y=1300000 fixe, quel que soit le nombre réel de
+    # familles/actifs — avec peu de lignes, un grand vide séparait le bloc de
+    # la bannière TOTAL en bas. On centre désormais verticalement le bloc
+    # (les 2 colonnes démarrent à la même hauteur, calculée) dans l'espace
+    # disponible entre le titre et la bannière — mise en page des colonnes
+    # elle-même inchangée.
+    FAMILY_HEADER_H, ACTIF_ROW_H, FAMILY_GAP = 210000, 185000, 90000
+    CONTENT_TOP, CONTENT_BOTTOM = 1300000, 4460000  # 4460000 = 100000 EMU au-dessus de la bannière (4560000)
+
+    def _col_height(fam_list):
+        return sum(FAMILY_HEADER_H + len(fam["actifs"]) * ACTIF_ROW_H + FAMILY_GAP for fam in fam_list)
+
+    block_height = max((_col_height(c) for c in cols), default=0)
+    envelope = CONTENT_BOTTOM - CONTENT_TOP
+    y = CONTENT_TOP + max(0, envelope - block_height) // 2
 
     for col_i, fam_list in enumerate(cols):
         cy, cx = y, col_xs[col_i]
         for fam in fam_list:
             sous_total = sum(a["montant"] for a in fam["actifs"])
             _textbox(s5, cx, cy, col_w, 180000, f"{fam['nom']} — {money(sous_total)}", 9,
-                     BORDEAUX, bold=True)
+                     BORDEAUX, bold=True, font=FONT_TITRE)
             cy += 210000
             for a in fam["actifs"]:
                 _rect(s5, cx, cy + 155000, col_w, 1000, FILET)
@@ -281,8 +298,9 @@ def rebuild_slide5_patrimoine(prs, familles, total_net):
                 prop = a["proprietaire"]
                 prop_color = GRIS_LABEL if prop.lower().startswith("commun") else (
                     BORDEAUX if a.get("initiale_bordeaux") else NAVY)
+                prop_font = FONT_TITRE if prop_color in (BORDEAUX, NAVY) else FONT_CORPS
                 _textbox(s5, cx + col_w * 0.56, cy, col_w * 0.20, 170000, prop, 7.5,
-                         prop_color, align=PP_ALIGN.CENTER)
+                         prop_color, align=PP_ALIGN.CENTER, font=prop_font)
                 _textbox(s5, cx + col_w * 0.76, cy, col_w * 0.24, 170000, money(a["montant"]), 8,
                          CORPS, align=PP_ALIGN.RIGHT)
                 cy += 185000
@@ -500,15 +518,37 @@ def personalize(canvas_in, plan, out_path):
         raise ValueError("plan invalide : la clé '5' ne doit jamais être fournie dans "
                           "'replacements' — la slide 5 est reconstruite nativement (patrimoine).")
 
+    def _migrate_remaining_bronze_clair(xml, target_color):
+        """CORRECTIF 01/09/2026 (crash-test 3 dossiers fictifs) : le remplissage par
+        placeholder ne recolore QUE les runs effectivement substitués. Deux cas
+        échappaient donc à R16 :
+          1. le token '[MOIS ANNÉE]' (remplacement de chaîne brut, en amont de la
+             boucle par run) — gap déjà documenté ;
+          2. tout texte FIXE du Canvas (ex. le sous-titre 'Stratégie patrimoniale'
+             en couverture) qui n'est jamais un placeholder '[...]' mais reste
+             néanmoins stylé en bronze clair 8E5B3F dans le fichier maître — jamais
+             documenté avant ce crash-test.
+        Passe finale, globale à la slide : tout 8E5B3F restant migre vers la
+        couleur cible de CETTE slide (bronze fort ou taupe selon color_for_slide),
+        conformément à l'esprit de R16 ('toute occurrence... migre au remplissage')."""
+        return re.sub(
+            r'<a:srgbClr val="8E5B3F"/>',
+            f'<a:srgbClr val="{target_color}"/>',
+            xml,
+        )
+
     for slide_num, values in replacements.items():
         path = os.path.join(tmp_dir, "ppt", "slides", f"slide{slide_num}.xml")
         xml = open(path, encoding="utf-8").read()
         target_color = color_for_slide(slide_num)
-        open(path, "w", encoding="utf-8").write(inject_slide(xml, values, mois_annee, target_color))
+        xml = inject_slide(xml, values, mois_annee, target_color)
+        xml = _migrate_remaining_bronze_clair(xml, target_color)
+        open(path, "w", encoding="utf-8").write(xml)
 
     path6 = os.path.join(tmp_dir, "ppt", "slides", "slide6.xml")
     xml6 = open(path6, encoding="utf-8").read().replace("[MOIS ANNÉE]", mois_annee)
     xml6, status6 = inject_slide6_labels(xml6, plan.get("allocation_pct"), plan.get("liquidite_pct"))
+    xml6 = _migrate_remaining_bronze_clair(xml6, color_for_slide("6"))
     open(path6, "w", encoding="utf-8").write(xml6)
     print(f"  slide6 (répartition) : {status6}")
 
