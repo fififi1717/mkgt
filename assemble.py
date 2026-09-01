@@ -402,7 +402,23 @@ def build_default_canvas_folio_map(canvas_path):
     rId de slide Canvas le folio statique (2 chiffres isolés, ex. "07") tel
     qu'il apparaît AVANT toute insertion de slide bibliothèque ou
     réordonnancement. Slides sans folio détecté (couverture, sections
-    structurelles sans numéro) sont ignorées -- comportement attendu."""
+    structurelles sans numéro) sont ignorées -- comportement attendu.
+
+    CORRECTIF 01/09/2026 (retour Marc, bug sommaire/dividers) : depuis la
+    suppression des numéros de page sur les slides de contenu, plus aucune
+    slide n'affiche de VRAI folio dans ses 4 premiers textes -- les seuls
+    motifs à 2 chiffres restants sont les numéros de CHAPITRE des slides
+    structurelles ajoutées par Marc (Sommaire "01 Audit patrimonial...",
+    titres de section "01 AUDIT PATRIMONIAL" / "02 VOTRE STRATÉGIE"). Ce
+    ne sont PAS des folios de page -- les traiter comme tels les remplaçait
+    par leur position physique dans le classeur assemblé (ex. "02" -> "10"),
+    corrompant silencieusement un numéro de chapitre volontaire. On exclut
+    donc explicitement : (a) toute slide contenant le mot "SOMMAIRE" (table
+    des matières elle-même), et (b) toute slide qui ne porte PAS la mention
+    MIF2 de pied de page -- signal fiable qu'une slide est structurelle
+    (sommaire, titre de section, couverture) plutôt qu'une page de contenu
+    numérotable. Si une future slide de contenu légitime devait un jour ne
+    pas porter cette mention, ce filtre devrait être revu en conséquence."""
     folio_map = {}
     with zipfile.ZipFile(canvas_path) as z:
         rels = z.read("ppt/_rels/presentation.xml.rels").decode("utf-8", "ignore")
@@ -414,6 +430,10 @@ def build_default_canvas_folio_map(canvas_path):
             except KeyError:
                 continue
             texts = [t for t in re.findall(r"<a:t>([^<]*)</a:t>", xml) if t.strip()]
+            if any("SOMMAIRE" in t.upper() for t in texts):
+                continue  # table des matières -- ses "01/02/03..." sont des rangs de chapitre, pas des folios
+            if not any(MENTION_MIF2 in t for t in texts):
+                continue  # pas de pied de page réglementaire -> slide structurelle (couverture, titre de section), pas de contenu paginé
             folio_candidates = [t for t in texts[:4] if re.fullmatch(r"\d{2}", t)]
             if folio_candidates:
                 folio_map[rid] = folio_candidates[0]

@@ -169,16 +169,33 @@ def _move_shape_at_offset(xml, old_y, new_y, tolerance=TOLERANCE_EMU):
     return xml[:m.start()] + m.group(1) + str(new_y) + m.group(3) + xml[m.end():]
 
 
+# Rythme entre rangées quand elles sont groupées en bloc compact : reprend le
+# pitch (écart de départ à départ) du design historique 3 rangées (900000),
+# ce qui donne un gap interne de 900000-570000=330000 EMU entre le bas d'une
+# phrase et le mot-clé suivant — identique à l'esprit du template, pas une
+# valeur inventée.
+PITCH_PROJETS = 900000
+
+
 def _target_positions_projets(n):
-    """n rangées à afficher -> liste de {motcle, phrase} centrées dans
-    l'enveloppe, une bande égale par rangée."""
+    """n rangées à afficher -> liste de {motcle, phrase}. Les rangées restent
+    GROUPÉES en un bloc compact (pitch historique du template, PAS étalées
+    sur toute l'enveloppe) ; seul le bloc entier est centré dans l'enveloppe
+    (espace haut/bas égal, rien de plus entre les rangées).
+
+    CORRECTIF 01/09/2026 (retour Marc, 1er essai) : la version précédente
+    découpait l'enveloppe en n bandes égales et centrait chaque rangée dans
+    SA bande -- correct à l'œil pour "un espace haut/bas égal" globalement,
+    mais ça écartait les rangées entre elles bien plus que le rythme normal
+    du template ("trop d'espace entre les textes"). Un bloc compact centré
+    comme un tout est la bonne lecture de la demande."""
     if n <= 0:
         return []
-    band_h = ENVELOPE_PROJETS / n
+    block_height = (n - 1) * PITCH_PROJETS + ROW_HEIGHT_PROJETS
+    block_top = TOP_PROJETS + (ENVELOPE_PROJETS - block_height) / 2
     targets = []
     for i in range(n):
-        band_top = TOP_PROJETS + i * band_h
-        motcle_y = round(band_top + (band_h - ROW_HEIGHT_PROJETS) / 2)
+        motcle_y = round(block_top + i * PITCH_PROJETS)
         targets.append({"motcle": motcle_y, "phrase": motcle_y + DELTA_PHRASE_PROJETS})
     return targets
 
