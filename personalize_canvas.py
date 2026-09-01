@@ -148,6 +148,49 @@ def _replace_run_text(run_xml, new_text, target_color=COLOR_BRONZE_FORT):
     return re.sub(r'<a:srgbClr val="([0-9A-Fa-f]{6})"/>', recolor, run_xml)
 
 
+def transform_je_to_vous(phrase):
+    """CORRECTIF 01/09/2026 (retour Marc, slide 12 'Vos projets') : la slide finale
+    reprenait telle quelle la phrase à la 1ère personne saisie en Gate 2 ('Je
+    souhaite...'), ce qui n'a de sens que pendant la collecte consultant — pas sur
+    le livrable client, qui doit s'adresser au client en 'vous'. Le Gate 2 reste
+    inchangé (toujours la formulation 'je', naturelle pour la saisie QCM) ; seule
+    la valeur injectée sur la slide passe par cette fonction.
+
+    Couvre en priorité les 4 verbes standards du QCM (table figée, fiable à 100 %).
+    Pour la saisie libre, bascule heuristique best-effort (pronoms + tournures
+    courantes) — non garantie grammaticalement parfaite sur toute formulation
+    libre, contrairement à la table figée ci-dessous. Appliqué sans étape de
+    relecture consultant (décision Marc du 01/09/2026 : pas nécessaire)."""
+    fixed_mappings = [
+        (r"^Je m['’]interroge sur\b", "Vous vous interrogez sur"),
+        (r"^Je souhaite\b", "Vous souhaitez"),
+        (r"^Je désire\b", "Vous désirez"),
+        (r"^Je réfléchis à\b", "Vous réfléchissez à"),
+    ]
+    result = None
+    for pattern, replacement in fixed_mappings:
+        if re.match(pattern, phrase, flags=re.IGNORECASE):
+            result = re.sub(pattern, replacement, phrase, count=1, flags=re.IGNORECASE)
+            break
+
+    if result is None:
+        # Repli heuristique pour la saisie libre (hors table figée) — best-effort,
+        # ne conjugue pas les verbes irréguliers (ex. "je veux" -> "vous veux",
+        # incorrect ; seuls les 4 verbes de la table figée sont garantis).
+        result = phrase
+        result = re.sub(r"^Je m['’]", "Vous vous ", result)
+        result = re.sub(r"^J['’]", "Vous ", result)
+        result = re.sub(r"^Je\b", "Vous", result)
+
+    # Dans tous les cas (table figée ou repli) : les possessifs 1ère personne
+    # restants dans le corps de la phrase ("mon patrimoine", "mes enfants"...)
+    # doivent aussi basculer en 2e personne.
+    result = re.sub(r"\bmon\b", "votre", result, flags=re.IGNORECASE)
+    result = re.sub(r"\bma\b", "votre", result, flags=re.IGNORECASE)
+    result = re.sub(r"\bmes\b", "vos", result, flags=re.IGNORECASE)
+    return result
+
+
 def inject_slide(xml, replacements, mois_annee, target_color=COLOR_BRONZE_FORT):
     xml = xml.replace("[MOIS ANNÉE]", mois_annee)
     runs = list(re.finditer(r"<a:r>(?:(?!</a:r>).)*</a:r>", xml, re.S))
@@ -203,12 +246,14 @@ def inject_slide6_labels(xml, allocation_pct, liquidite_pct):
 # ---------------------------------------------------------------------------
 
 def _textbox(slide, l, t, w, h, text, size, color, bold=False, align=PP_ALIGN.LEFT,
-             font=FONT_CORPS, anchor=MSO_ANCHOR.TOP, italic=False):
+             font=FONT_CORPS, anchor=MSO_ANCHOR.TOP, italic=False,
+             margin_left=0, margin_right=0):
     tb = slide.shapes.add_textbox(Emu(l), Emu(t), Emu(w), Emu(h))
     tf = tb.text_frame
     tf.word_wrap = True
     tf.vertical_anchor = anchor
-    tf.margin_left = tf.margin_right = tf.margin_top = tf.margin_bottom = 0
+    tf.margin_left, tf.margin_right = Emu(margin_left), Emu(margin_right)
+    tf.margin_top = tf.margin_bottom = 0
     p = tf.paragraphs[0]
     p.alignment = align
     r = p.add_run()
@@ -314,8 +359,14 @@ def rebuild_slide5_patrimoine(prs, familles, total_net):
     r1 = tf.paragraphs[0].add_run()
     r1.text = "TOTAL PATRIMOINE NET"
     r1.font.size, r1.font.color.rgb, r1.font.name = Pt(10), CREME, FONT_CORPS
+    # CORRECTIF 01/09/2026 (retour Marc, "encadré bleu trop serré / montant tassé
+    # à droite") : marge droite nulle par défaut dans _textbox() -> le montant en
+    # gras touchait le bord du cadre. Ajout d'une marge droite dédiée à cette
+    # bannière (cohérent avec la règle établie : le padding visuel se règle via
+    # les insets, jamais en déplaçant la boîte en X).
     _textbox(s5, margin_left + banner_w - 2354500, banner_y, 2354500, 300000, money(total_net),
-             12, CREME, bold=True, align=PP_ALIGN.RIGHT, anchor=MSO_ANCHOR.MIDDLE)
+             12, CREME, bold=True, align=PP_ALIGN.RIGHT, anchor=MSO_ANCHOR.MIDDLE,
+             margin_right=137160)
 
 
 def add_bareme_bar(prs, tmi_label):
@@ -541,6 +592,15 @@ def personalize(canvas_in, plan, out_path):
         path = os.path.join(tmp_dir, "ppt", "slides", f"slide{slide_num}.xml")
         xml = open(path, encoding="utf-8").read()
         target_color = color_for_slide(slide_num)
+        if str(slide_num) == "12":
+            # Slide "Vos projets" : positions impaires (1,3,5) = phrase à la
+            # 1ère personne saisie en Gate 2 -> convertie en "vous" pour le
+            # livrable (cf. transform_je_to_vous). Positions paires (0,2,4)
+            # = mot-clé court, non concerné.
+            values = [
+                transform_je_to_vous(v) if (i % 2 == 1) else v
+                for i, v in enumerate(values)
+            ]
         xml = inject_slide(xml, values, mois_annee, target_color)
         xml = _migrate_remaining_bronze_clair(xml, target_color)
         open(path, "w", encoding="utf-8").write(xml)
